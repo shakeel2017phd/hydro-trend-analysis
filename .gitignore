@@ -1,0 +1,59 @@
+# ─── Python bytecode / caches ───────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+
+# ─── Virtual environments ───────────────────────────────────────────────────
+.env
+.venv/
+env/
+venv/
+
+# ─── Build / packaging artifacts ────────────────────────────────────────────
+build/
+dist/
+*.egg-info/
+*.egg
+.eggs/
+# Written by setuptools_scm at build time — never commit it.
+src/hydrotrends/_version.py
+
+# ─── Test / lint / type-check caches ────────────────────────────────────────
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+
+# ─── Docs build output ──────────────────────────────────────────────────────
+docs/_build/
+
+# ─── Jupyter ────────────────────────────────────────────────────────────────
+.ipynb_checkpoints/
+
+# ─── OS / editor cruft ──────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+Desktop.ini
+.idea/
+.vscode/
+
+# ─── Data files ─────────────────────────────────────────────────────────────
+# Analysis inputs/outputs are large and regenerated, so ignore them broadly.
+# NOTE: /data/ and /outputs/ are ANCHORED to the repo root (leading slash) so
+# they don't also sweep up tests/data/ or any nested data/ folder.
+/data/
+/outputs/
+*.csv
+*.xlsx
+
+# ─── …but keep the curated data we deliberately track ───────────────────────
+# These win because they come after the blanket *.csv / *.xlsx rules above.
+# The /** globs re-include every file in these folders (any extension), so
+# future sample/fixture files are tracked automatically — no per-file pinning.
+!src/hydrotrends/data/sample_data/
+!src/hydrotrends/data/sample_data/**
+!tests/data/
+!tests/data/**

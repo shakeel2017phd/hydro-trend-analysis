@@ -1,0 +1,19 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: "hydro-trend-analysis"
+abstract: "Hydrological time-series analysis: descriptive statistics, trend analysis, Innovative Trend Analysis (ITA), frequency analysis, visualization and reporting."
+type: software
+authors:
+  - family-names: Ahmad
+    given-names: Shakeel
+    # orcid: "https://orcid.org/0000-0000-0000-0000"   # add if available
+license: MIT
+repository-code: "https://github.com/shakeel2017phd/hydro-trend-analysis"
+version: "0.1.0"          # update to match each tagged release
+date-released: "2026-07-10"
+keywords:
+  - hydrology
+  - trend analysis
+  - innovative trend analysis
+  - Mann-Kendall
+  - Indus Basin

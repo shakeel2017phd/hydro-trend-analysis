@@ -1,0 +1,141 @@
+###############################################################################
+# pyproject.toml — hydro-trend-analysis
+#
+#   Distribution name (PyPI) : hydro-trend-analysis
+#   Import name  (Python)    : hydrotrends        <-- must equal src/hydrotrends/
+#
+# Author  : Shakeel Ahmad
+# Python  : >=3.11
+# License : MIT
+###############################################################################
+
+[build-system]
+requires = ["setuptools>=77", "setuptools_scm>=8"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hydro-trend-analysis"
+dynamic = ["version"]                 # supplied by setuptools_scm (git tags)
+
+description = "Hydrological time-series analysis: descriptive statistics, trend analysis, Innovative Trend Analysis (ITA), change-point detection, frequency analysis, visualization and reporting."
+readme = "README.md"
+requires-python = ">=3.11"
+
+license = "MIT"                        # PEP 639 SPDX expression
+license-files = ["LICENSE"]
+
+authors     = [{ name = "Shakeel Ahmad" }]   # add ', email = "2017phdcivil01@student.uet.edu.pk"' for PyPI contact
+maintainers = [{ name = "Shakeel Ahmad" }]
+
+keywords = [
+    "hydrology", "trend analysis", "innovative trend analysis", "ITA",
+    "mann kendall", "sen slope", "change point", "pettitt",
+    "frequency analysis", "flow duration curve", "river flow", "streamflow",
+    "reservoir", "water resources", "Pakistan", "Indus Basin",
+]
+
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Intended Audience :: Education",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Scientific/Engineering :: Information Analysis",
+]
+
+# --- Runtime dependencies (only what the package actually imports) ------------
+dependencies = [
+    "numpy>=2.0",
+    "pandas>=2.2",
+    "scipy>=1.15",       # scipy.stats (skew, kurtosis, ranks, distributions)
+    "matplotlib>=3.9",   # static plots (viz.plotting)
+    "seaborn>=0.13",     # distribution grid + flood heatmap
+    "plotly>=5.22",      # interactive plots (HTML export, no kaleido needed)
+    "openpyxl>=3.1",     # Excel reports + .xlsx reading
+    "pyyaml>=6.0",       # YAML config (core.config)
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "pytest-cov>=6",
+    "ruff>=0.8",         # lint + format (replaces black)
+    "mypy>=1.14",
+    "pre-commit>=4",
+    "build>=1",
+    "twine>=6",
+    "pymannkendall>=1.4",  # test-only: cross-validation oracle for the trend tests
+]
+docs = ["sphinx>=8", "furo", "myst-parser"]
+notebook = ["jupyterlab", "ipykernel"]
+
+[project.urls]
+Homepage      = "https://github.com/shakeel2017phd/hydro-trend-analysis"
+Repository    = "https://github.com/shakeel2017phd/hydro-trend-analysis"
+Documentation = "https://github.com/shakeel2017phd/hydro-trend-analysis#readme"
+Issues        = "https://github.com/shakeel2017phd/hydro-trend-analysis/issues"
+Changelog     = "https://github.com/shakeel2017phd/hydro-trend-analysis/blob/main/CHANGELOG.md"
+
+[project.scripts]
+hydro-trend = "hydrotrends.cli:main"
+
+###############################################################################
+# setuptools: src layout, package discovery, and shipped data
+###############################################################################
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+# Ship the typing marker and the bundled sample datasets inside the wheel.
+hydrotrends = ["py.typed", "data/sample_data/*.csv"]
+
+###############################################################################
+# Version — single-sourced from git tags (no hand-maintained version file).
+#   setuptools_scm writes the generated file below; keep it gitignored.
+###############################################################################
+[tool.setuptools_scm]
+version_file = "src/hydrotrends/_version.py"
+
+###############################################################################
+# Tooling
+###############################################################################
+[tool.pytest.ini_options]
+minversion = "8"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-ra --strict-markers --strict-config"
+
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "SIM", "B"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["hydrotrends"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+ignore_missing_imports = true         # numpy/pandas/scipy/plotly stubs vary
+
+[tool.coverage.run]
+source = ["hydrotrends"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.:",
+    "raise NotImplementedError",
+    "if TYPE_CHECKING:",
+]
