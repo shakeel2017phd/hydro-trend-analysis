@@ -1,4 +1,5 @@
 """Trend tests: cross-validated against reference implementations."""
+
 import math
 
 import numpy as np
@@ -27,8 +28,11 @@ def test_mann_kendall_matches_pymannkendall(trend_series):
 
 @requires_pmk
 def test_sens_slope_matches(trend_series):
-    assert math.isclose(ht.sens_slope(trend_series).slope,
-                        pmk.original_test(trend_series).slope, rel_tol=1e-9)
+    assert math.isclose(
+        ht.sens_slope(trend_series).slope,
+        pmk.original_test(trend_series).slope,
+        rel_tol=1e-9,
+    )
 
 
 @requires_pmk

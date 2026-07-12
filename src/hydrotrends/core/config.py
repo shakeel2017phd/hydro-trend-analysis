@@ -93,7 +93,9 @@ class InputSpec:
     resolution: TimeResolution
     date_column: str = "Date"
     value_column: str = "inflow_cusec"
-    value_scale: float = 1.0   # multiply the value column by this (e.g. 1000 for 1000-Cusecs)
+    value_scale: float = (
+        1.0  # multiply the value column by this (e.g. 1000 for 1000-Cusecs)
+    )
     date_format: DateFormat = DateFormat.AUTO
 
     def __post_init__(self) -> None:
@@ -101,14 +103,10 @@ class InputSpec:
             object.__setattr__(self, "path", Path(self.path).expanduser())
         object.__setattr__(self, "value_scale", float(self.value_scale))
         if self.value_scale <= 0:
-            raise ConfigError(
-                f"value_scale must be > 0, got {self.value_scale}"
-            )
+            raise ConfigError(f"value_scale must be > 0, got {self.value_scale}")
         if not isinstance(self.resolution, TimeResolution):
             try:
-                object.__setattr__(
-                    self, "resolution", TimeResolution(self.resolution)
-                )
+                object.__setattr__(self, "resolution", TimeResolution(self.resolution))
             except ValueError as err:
                 valid = ", ".join(r.value for r in TimeResolution)
                 raise ConfigError(
@@ -127,8 +125,7 @@ class InputSpec:
             and self.resolution is TimeResolution.DAILY
         ):
             raise ConfigError(
-                "date_format='dekad_compact' only applies to 10-daily input, "
-                "not daily"
+                "date_format='dekad_compact' only applies to 10-daily input, not daily"
             )
 
 
@@ -167,7 +164,7 @@ class Config:
 
     # Output / behaviour.
     dpi: int = _DEFAULT_DPI
-    make_interactive: bool = True          # export Plotly HTML alongside PNGs
+    make_interactive: bool = True  # export Plotly HTML alongside PNGs
     log_level: str = _DEFAULT_LOG_LEVEL
 
     # ── validation & coercion ────────────────────────────────────────────────
@@ -188,7 +185,14 @@ class Config:
             if isinstance(item, InputSpec):
                 specs.append(item)
             elif isinstance(item, Mapping):
-                allowed = {"path", "resolution", "date_column", "value_column", "value_scale", "date_format"}
+                allowed = {
+                    "path",
+                    "resolution",
+                    "date_column",
+                    "value_column",
+                    "value_scale",
+                    "date_format",
+                }
                 unknown = set(item) - allowed
                 if unknown:
                     raise ConfigError(
@@ -214,7 +218,9 @@ class Config:
             units = _dedupe_preserving_order(FlowUnit(u) for u in self.flow_units)
         except ValueError as err:
             valid = ", ".join(u.value for u in FlowUnit)
-            raise ConfigError(f"invalid flow unit ({err}); choose from: {valid}") from err
+            raise ConfigError(
+                f"invalid flow unit ({err}); choose from: {valid}"
+            ) from err
         if not units:
             raise ConfigError("flow_units must contain at least one unit")
         object.__setattr__(self, "flow_units", units)
@@ -298,7 +304,9 @@ class Config:
         if raw is None:
             raw = {}
         if not isinstance(raw, Mapping):
-            raise ConfigError(f"config file {p} must contain a mapping at the top level")
+            raise ConfigError(
+                f"config file {p} must contain a mapping at the top level"
+            )
         logger.debug("loaded config from %s", p)
         return cls.from_dict(raw)
 

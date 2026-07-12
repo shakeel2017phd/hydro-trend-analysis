@@ -1,4 +1,5 @@
 """CLI: analyze command and error handling."""
+
 import pytest
 from openpyxl import load_workbook
 
@@ -12,25 +13,47 @@ def _daily_csv():
 
 def test_analyze_single_input(tmp_path):
     out = tmp_path / "r.xlsx"
-    rc = cli.main(["analyze", _daily_csv(), "-o", str(out),
-                   "--value-column", "inflow_cusec"])
+    rc = cli.main(
+        ["analyze", _daily_csv(), "-o", str(out), "--value-column", "inflow_cusec"]
+    )
     assert rc == 0 and out.exists()
     assert "Cover" in load_workbook(out).sheetnames
 
 
 def test_no_descriptive(tmp_path):
     out = tmp_path / "r.xlsx"
-    cli.main(["analyze", _daily_csv(), "-o", str(out),
-              "--value-column", "inflow_cusec", "--no-descriptive"])
+    cli.main(
+        [
+            "analyze",
+            _daily_csv(),
+            "-o",
+            str(out),
+            "--value-column",
+            "inflow_cusec",
+            "--no-descriptive",
+        ]
+    )
     assert not any("Descriptive" in s for s in load_workbook(out).sheetnames)
 
 
 def test_10daily_compact(tmp_path):
     out = tmp_path / "t.xlsx"
-    rc = cli.main(["analyze", str(ht.datasets.sample_path("tarbela_10daily")),
-                   "-o", str(out), "-r", "10daily",
-                   "--value-column", "Inflow_1000Cusecs", "--value-scale", "1000",
-                   "--date-format", "dekad_compact"])
+    rc = cli.main(
+        [
+            "analyze",
+            str(ht.datasets.sample_path("tarbela_10daily")),
+            "-o",
+            str(out),
+            "-r",
+            "10daily",
+            "--value-column",
+            "Inflow_1000Cusecs",
+            "--value-scale",
+            "1000",
+            "--date-format",
+            "dekad_compact",
+        ]
+    )
     assert rc == 0 and out.exists()
 
 

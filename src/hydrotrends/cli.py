@@ -61,26 +61,51 @@ def build_parser() -> argparse.ArgumentParser:
 
     a = sub.add_parser("analyze", help="run trend analysis and write a report")
     a.add_argument("input", nargs="*", help="input CSV/XLSX file(s)")
-    a.add_argument("-o", "--output", required=True,
-                   help="output .xlsx path (single input) or directory (multiple)")
+    a.add_argument(
+        "-o",
+        "--output",
+        required=True,
+        help="output .xlsx path (single input) or directory (multiple)",
+    )
     a.add_argument("-r", "--resolution", choices=["daily", "10daily"], default="daily")
     a.add_argument("--date-column", default="Date")
     a.add_argument("--value-column", default="inflow_cusec")
-    a.add_argument("--value-scale", type=float, default=1.0,
-                   help="multiply the value column (e.g. 1000 for 1000-Cusecs)")
-    a.add_argument("--date-format",
-                   choices=["auto", "month_first", "iso", "dekad_compact"],
-                   default="auto")
-    a.add_argument("--calendar", action="store_true",
-                   help="use calendar-year framing (default: hydrological)")
-    a.add_argument("--alpha", type=float, default=DEFAULT_ALPHA,
-                   help="significance level for the trend tests")
+    a.add_argument(
+        "--value-scale",
+        type=float,
+        default=1.0,
+        help="multiply the value column (e.g. 1000 for 1000-Cusecs)",
+    )
+    a.add_argument(
+        "--date-format",
+        choices=["auto", "month_first", "iso", "dekad_compact"],
+        default="auto",
+    )
+    a.add_argument(
+        "--calendar",
+        action="store_true",
+        help="use calendar-year framing (default: hydrological)",
+    )
+    a.add_argument(
+        "--alpha",
+        type=float,
+        default=DEFAULT_ALPHA,
+        help="significance level for the trend tests",
+    )
     a.add_argument("--no-clean", action="store_true", help="skip the cleaning step")
-    a.add_argument("--no-descriptive", action="store_true",
-                   help="omit the descriptive-statistics sheets")
+    a.add_argument(
+        "--no-descriptive",
+        action="store_true",
+        help="omit the descriptive-statistics sheets",
+    )
     a.add_argument("--config", help="YAML config file (overrides the input flags)")
-    a.add_argument("-v", "--verbose", action="count", default=0,
-                   help="-v for INFO, -vv for DEBUG logging")
+    a.add_argument(
+        "-v",
+        "--verbose",
+        action="count",
+        default=0,
+        help="-v for INFO, -vv for DEBUG logging",
+    )
     a.set_defaults(func=_cmd_analyze)
     return parser
 
@@ -133,7 +158,8 @@ def _cmd_analyze(args: argparse.Namespace) -> int:
         pre = preprocess(frame, spec.resolution)
         out = _output_path(args.output, spec, single=single)
         generate_report(
-            pre, out,
+            pre,
+            out,
             columns=columns,
             title=f"{spec.path.stem} — Trend Analysis",
             subtitle=_SUBTITLE,

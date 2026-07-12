@@ -122,6 +122,7 @@ UNIT_PAIRS: Final[Mapping[FlowUnit, VolumeUnit]] = MappingProxyType(
     }
 )
 
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Temporal aggregation scales
 # ─────────────────────────────────────────────────────────────────────────────
@@ -166,6 +167,7 @@ LATE_KHARIF_MONTHS: Final[tuple[int, ...]] = (7, 8, 9)
 KHARIF_JUNE_SPLIT_DAY: Final = 10
 RABI_MONTHS: Final[tuple[int, ...]] = (10, 11, 12, 1, 2, 3)
 
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Meteorological seasons — an alternative, calendar-based grouping
 # ─────────────────────────────────────────────────────────────────────────────
@@ -198,18 +200,47 @@ DEKAD_UPPER_DAYS: Final[tuple[int, int]] = (10, 20)
 # Month label orderings
 # ─────────────────────────────────────────────────────────────────────────────
 HYDRO_MONTHS: Final[tuple[str, ...]] = (
-    "Apr", "May", "Jun", "Jul", "Aug", "Sep",
-    "Oct", "Nov", "Dec", "Jan", "Feb", "Mar",
+    "Apr",
+    "May",
+    "Jun",
+    "Jul",
+    "Aug",
+    "Sep",
+    "Oct",
+    "Nov",
+    "Dec",
+    "Jan",
+    "Feb",
+    "Mar",
 )
 CAL_MONTHS: Final[tuple[str, ...]] = (
-    "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+    "Jan",
+    "Feb",
+    "Mar",
+    "Apr",
+    "May",
+    "Jun",
+    "Jul",
+    "Aug",
+    "Sep",
+    "Oct",
+    "Nov",
+    "Dec",
 )
 FULL_MONTHS: Final[Mapping[str, str]] = MappingProxyType(
     {
-        "Jan": "January", "Feb": "February", "Mar": "March", "Apr": "April",
-        "May": "May", "Jun": "June", "Jul": "July", "Aug": "August",
-        "Sep": "September", "Oct": "October", "Nov": "November", "Dec": "December",
+        "Jan": "January",
+        "Feb": "February",
+        "Mar": "March",
+        "Apr": "April",
+        "May": "May",
+        "Jun": "June",
+        "Jul": "July",
+        "Aug": "August",
+        "Sep": "September",
+        "Oct": "October",
+        "Nov": "November",
+        "Dec": "December",
     }
 )
 
@@ -250,6 +281,7 @@ CAL_DEKADS: Final[tuple[str, ...]] = tuple(
     f"{m}{d}" for m in CAL_MONTHS for d in (1, 2, 3)
 )
 
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Input temporal resolution
 # ─────────────────────────────────────────────────────────────────────────────
@@ -268,9 +300,9 @@ class TimeResolution(StrEnum):
 class OnIssue(StrEnum):
     """Policy for how a cleaning step handles a detected data-quality issue."""
 
-    KEEP = "keep"     # leave rows in place, just report
-    DROP = "drop"     # remove the offending rows
-    ERROR = "error"   # raise instead of proceeding
+    KEEP = "keep"  # leave rows in place, just report
+    DROP = "drop"  # remove the offending rows
+    ERROR = "error"  # raise instead of proceeding
 
 
 class TrendDirection(StrEnum):
@@ -284,10 +316,10 @@ class TrendDirection(StrEnum):
 class FillMethod(StrEnum):
     """How to impute missing values before the missing-row policy is applied."""
 
-    NONE = "none"        # no filling (missing rows handled by the OnIssue policy)
-    LINEAR = "linear"    # linear interpolation across the gap
-    FFILL = "ffill"      # carry the last valid value forward
-    BFILL = "bfill"      # carry the next valid value backward
+    NONE = "none"  # no filling (missing rows handled by the OnIssue policy)
+    LINEAR = "linear"  # linear interpolation across the gap
+    FFILL = "ffill"  # carry the last valid value forward
+    BFILL = "bfill"  # carry the next valid value backward
 
 
 class DateFormat(StrEnum):
@@ -297,20 +329,20 @@ class DateFormat(StrEnum):
     ``DEKAD_COMPACT`` is the 10-daily string encoding.
     """
 
-    AUTO = "auto"                    # mixed real dates, day-first (e.g. 31/12/2020)
-    MONTH_FIRST = "month_first"      # mixed real dates, US month-first (12/31/2020)
-    ISO = "iso"                      # ISO-8601 (2020-12-31), unambiguous
+    AUTO = "auto"  # mixed real dates, day-first (e.g. 31/12/2020)
+    MONTH_FIRST = "month_first"  # mixed real dates, US month-first (12/31/2020)
+    ISO = "iso"  # ISO-8601 (2020-12-31), unambiguous
     DEKAD_COMPACT = "dekad_compact"  # "2020Apr1" = year + month-abbr + dekad digit
 
 
 class ResolutionInfo(NamedTuple):
     """Per-resolution metadata: which scale, ordered period labels, and size."""
 
-    scale: "TimeScale"
+    scale: TimeScale
     hydro_periods: tuple[str, ...]
     cal_periods: tuple[str, ...]
-    n_period_labels: int      # size of the ordered category (366 daily / 36 dekad)
-    is_pre_aggregated: bool   # True for 10-daily (values are dekad averages)
+    n_period_labels: int  # size of the ordered category (366 daily / 36 dekad)
+    is_pre_aggregated: bool  # True for 10-daily (values are dekad averages)
 
 
 RESOLUTION_INFO: Final[Mapping[TimeResolution, ResolutionInfo]] = MappingProxyType(
@@ -347,13 +379,13 @@ COL_MONTH_NUM: Final = "MonthNum"
 COL_MONTH: Final = "Month"
 COL_DAY: Final = "Day"
 COL_DEKAD: Final = "Dekad"
-COL_PERIOD: Final = "Period"      # resolution-dependent label ("Apr-01" or "Apr1")
-COL_N_DAYS: Final = "NDays"       # days the row represents (1 daily; dekad length)
+COL_PERIOD: Final = "Period"  # resolution-dependent label ("Apr-01" or "Apr1")
+COL_N_DAYS: Final = "NDays"  # days the row represents (1 daily; dekad length)
 COL_VOL_M3: Final = "Vol_m3"
 COL_VOL_MAF: Final = "Vol_MAF"
 COL_VOL_BCM: Final = "Vol_BCM"
-COL_SEASON: Final = "Season"          # cropping season (Kharif/Rabi)
-COL_MET_SEASON: Final = "MetSeason"   # meteorological season
+COL_SEASON: Final = "Season"  # cropping season (Kharif/Rabi)
+COL_MET_SEASON: Final = "MetSeason"  # meteorological season
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Flood limits — canonical Indus Basin thresholds, in units of 1000 Cusecs
@@ -369,9 +401,9 @@ FLOOD_LIMITS_1000CUSECS: Final[Mapping[str, int]] = MappingProxyType(
 
 FLOOD_COLORS: Final[Mapping[str, str]] = MappingProxyType(
     {
-        "LF": "#90EE90",   # light green
-        "MF": "#ADD8E6",   # light blue
-        "HF": "#FFA07A",   # light salmon
+        "LF": "#90EE90",  # light green
+        "MF": "#ADD8E6",  # light blue
+        "HF": "#FFA07A",  # light salmon
         "VHF": "#FF0000",  # red
         "EHF": "#8B0000",  # dark red
     }
@@ -382,10 +414,10 @@ FLOOD_COLORS: Final[Mapping[str, str]] = MappingProxyType(
 # ─────────────────────────────────────────────────────────────────────────────
 # These are the *default* values; core.config may override the tunable ones
 # (e.g. alpha) at runtime.
-DEFAULT_ALPHA: Final = 0.05          # significance level for MK / Pettitt
-ITA_SLOPE_EPS: Final = 1e-6          # |slope| below this -> "no trend" in ITA
-MOVING_AVERAGE_WINDOW: Final = 5     # MA(5) smoothing window (min_periods = 5)
-LOWESS_FRAC: Final = 0.3             # smoothing span for LOWESS overlays
+DEFAULT_ALPHA: Final = 0.05  # significance level for MK / Pettitt
+ITA_SLOPE_EPS: Final = 1e-6  # |slope| below this -> "no trend" in ITA
+MOVING_AVERAGE_WINDOW: Final = 5  # MA(5) smoothing window (min_periods = 5)
+LOWESS_FRAC: Final = 0.3  # smoothing span for LOWESS overlays
 REPORTED_PERCENTILES: Final[tuple[int, ...]] = (10, 25, 75, 90)
 
 # Bai-Perron structural-break search.

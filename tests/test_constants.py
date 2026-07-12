@@ -1,4 +1,5 @@
 """Domain constants stay faithful to the source values."""
+
 import math
 from collections import Counter
 
@@ -16,7 +17,11 @@ def test_flood_limits_ascending():
     vals = [c.FLOOD_LIMITS_1000CUSECS[k] for k in c.FLOOD_CLASSES]
     assert vals == sorted(vals)
     assert dict(c.FLOOD_LIMITS_1000CUSECS) == {
-        "LF": 250, "MF": 375, "HF": 500, "VHF": 650, "EHF": 800
+        "LF": 250,
+        "MF": 375,
+        "HF": 500,
+        "VHF": 650,
+        "EHF": 800,
     }
 
 
@@ -29,6 +34,7 @@ def test_met_seasons_partition_year():
 def test_mappings_read_only():
     for name in ("FLOOD_LIMITS_1000CUSECS", "MET_SEASONS", "RESOLUTION_INFO"):
         import pytest
+
         with pytest.raises(TypeError):
             getattr(c, name)["x"] = 1  # type: ignore[index]
 

@@ -1,7 +1,7 @@
 """Preprocessing: derived columns, volumes, seasons, year filtering."""
+
 import math
 
-import numpy as np
 import pandas as pd
 
 import hydrotrends as ht
@@ -35,18 +35,24 @@ def test_seasons_both_schemes():
 
 def test_incomplete_year_dropped():
     full = _daily_year()
-    partial = pd.DataFrame({
-        k.COL_DATE: pd.date_range("2001-05-01", "2001-05-31"),
-        k.COL_FLOW_CUSECS: 100_000.0,
-    })
-    pre = ht.preprocess(pd.concat([full, partial], ignore_index=True), k.TimeResolution.DAILY)
+    partial = pd.DataFrame(
+        {
+            k.COL_DATE: pd.date_range("2001-05-01", "2001-05-31"),
+            k.COL_FLOW_CUSECS: 100_000.0,
+        }
+    )
+    pre = ht.preprocess(
+        pd.concat([full, partial], ignore_index=True), k.TimeResolution.DAILY
+    )
     assert set(pre.hydro[k.COL_HYDRO_YEAR].unique()) == {2000}
 
 
 def test_tendaily_ndays_leap_aware():
     # dekad-end dates for one hydro year
     rows = []
-    for yr, mo in [(2000, m) for m in (4,5,6,7,8,9,10,11,12)] + [(2001, m) for m in (1,2,3)]:
+    for yr, mo in [(2000, m) for m in (4, 5, 6, 7, 8, 9, 10, 11, 12)] + [
+        (2001, m) for m in (1, 2, 3)
+    ]:
         dim = pd.Timestamp(yr, mo, 1).days_in_month
         for d in (10, 20, dim):
             rows.append(pd.Timestamp(yr, mo, d))

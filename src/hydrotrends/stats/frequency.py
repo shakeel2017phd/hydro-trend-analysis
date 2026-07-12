@@ -104,6 +104,4 @@ def flow_percentiles(
     values = to_float_array(data)
     if values.size == 0:
         return {f"Q{p}": float("nan") for p in exceedances}
-    return {
-        f"Q{p}": float(np.percentile(values, 100 - p)) for p in exceedances
-    }
+    return {f"Q{p}": float(np.percentile(values, 100 - p)) for p in exceedances}

@@ -1,5 +1,5 @@
 """Change-point detection locates a clean step and guards small samples."""
-import numpy as np
+
 import pytest
 
 import hydrotrends as ht
@@ -20,9 +20,9 @@ def test_bai_perron_detects_step(step_series):
 
 
 def test_small_sample_guards():
-    assert ht.pettitt_test([1., 2., 3.]).index is None
-    assert ht.cusum_change_point([1., 2., 3.]) is None
-    assert ht.bai_perron_change_point([1.] * 8) is None
+    assert ht.pettitt_test([1.0, 2.0, 3.0]).index is None
+    assert ht.cusum_change_point([1.0, 2.0, 3.0]) is None
+    assert ht.bai_perron_change_point([1.0] * 8) is None
 
 
 def test_bai_perron_only_single_break(step_series):

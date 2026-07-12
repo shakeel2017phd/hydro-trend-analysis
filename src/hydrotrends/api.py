@@ -24,12 +24,11 @@ Design notes
 
 from __future__ import annotations
 
+import math
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-
-import math
 
 import numpy as np
 import pandas as pd
@@ -117,36 +116,55 @@ def analyze_series(
     n = len(arr)
     d = describe(arr)
     row: dict[str, Any] = {
-        "n": d.n, "mean": d.mean, "median": d.median, "std": d.std, "cv_pct": d.cv_pct,
-        "min": d.minimum, "max": d.maximum,
-        "p10": d.p10, "p25": d.p25, "p75": d.p75, "p90": d.p90,
-        "skew": d.skewness, "kurt": d.kurtosis,
+        "n": d.n,
+        "mean": d.mean,
+        "median": d.median,
+        "std": d.std,
+        "cv_pct": d.cv_pct,
+        "min": d.minimum,
+        "max": d.maximum,
+        "p10": d.p10,
+        "p25": d.p25,
+        "p75": d.p75,
+        "p90": d.p90,
+        "skew": d.skewness,
+        "kurt": d.kurtosis,
     }
     if n < _MIN_FOR_TRENDS:
         return row
 
     mk = mann_kendall(arr, alpha=alpha)
     sen = sens_slope(arr)
-    row.update({
-        "trend": str(mk.trend),
-        "p_value": mk.p_value,
-        "z_score": mk.z_score,
-        "sens_slope": sen.slope,
-        "sens_slope_pct": percent_slope(sen.slope, d.mean),
-        "significance": significance_stars(mk.p_value),
-    })
+    row.update(
+        {
+            "trend": str(mk.trend),
+            "p_value": mk.p_value,
+            "z_score": mk.z_score,
+            "sens_slope": sen.slope,
+            "sens_slope_pct": percent_slope(sen.slope, d.mean),
+            "significance": significance_stars(mk.p_value),
+        }
+    )
 
     mmk = mann_kendall_modified(arr, alpha=alpha)
-    row.update({
-        "mmk_trend": str(mmk.trend), "mmk_p": mmk.p_value,
-        "mmk_z": mmk.z_score, "mmk_sig": significance_stars(mmk.p_value),
-    })
+    row.update(
+        {
+            "mmk_trend": str(mmk.trend),
+            "mmk_p": mmk.p_value,
+            "mmk_z": mmk.z_score,
+            "mmk_sig": significance_stars(mmk.p_value),
+        }
+    )
 
     lin = linear_regression(arr)
-    row.update({
-        "lin_slope": lin.slope, "lin_intercept": lin.intercept,
-        "lin_r2": lin.r2, "lin_p": lin.p_value,
-    })
+    row.update(
+        {
+            "lin_slope": lin.slope,
+            "lin_intercept": lin.intercept,
+            "lin_r2": lin.r2,
+            "lin_p": lin.p_value,
+        }
+    )
 
     log = log_linear_regression(arr)
     row.update({"log_slope": log.slope, "log_r2": log.r2, "log_p": log.p_value})
@@ -158,18 +176,22 @@ def analyze_series(
         .dropna()
     )
     if len(ma) >= 3:
-        row.update({
-            "ma5_mean": float(ma.mean()),
-            "ma5_std": float(ma.std(ddof=1)),
-            "ma5_trend": str(mann_kendall(ma.to_numpy(), alpha=alpha).trend),
-        })
+        row.update(
+            {
+                "ma5_mean": float(ma.mean()),
+                "ma5_std": float(ma.std(ddof=1)),
+                "ma5_trend": str(mann_kendall(ma.to_numpy(), alpha=alpha).trend),
+            }
+        )
 
     ita = innovative_trend_analysis(arr)
     row.update({"ita_slope": ita.slope, "ita_trend": str(ita.trend)})
 
-    year_axis = np.asarray(years)[:n] if (
-        years is not None and len(np.asarray(years)) >= n
-    ) else np.arange(n)
+    year_axis = (
+        np.asarray(years)[:n]
+        if (years is not None and len(np.asarray(years)) >= n)
+        else np.arange(n)
+    )
     row.update(_change_point_keys(arr, year_axis))
     return row
 
@@ -224,8 +246,12 @@ def analyze_preprocessed(
     order = list(info.cal_periods if calendar else info.hydro_periods)
     year_col = COL_YEAR if calendar else COL_HYDRO_YEAR
     return analyze_by_period(
-        frame, value_col=value_col, period_col=COL_PERIOD,
-        year_col=year_col, order=order, alpha=alpha,
+        frame,
+        value_col=value_col,
+        period_col=COL_PERIOD,
+        year_col=year_col,
+        order=order,
+        alpha=alpha,
     )
 
 
@@ -233,8 +259,8 @@ def analyze_preprocessed(
 class ReportColumn:
     """One column to analyse in a report, with its display unit label."""
 
-    column: str        # DataFrame column, e.g. COL_FLOW_CUSECS
-    unit_label: str    # e.g. "Cusecs", "Cumecs", "MAF"
+    column: str  # DataFrame column, e.g. COL_FLOW_CUSECS
+    unit_label: str  # e.g. "Cusecs", "Cumecs", "MAF"
 
 
 def generate_report(

@@ -25,7 +25,6 @@ try:
 except ImportError:  # not built yet (setuptools_scm generates _version.py)
     __version__ = "0.0.0+unknown"
 
-from .data import datasets
 from .api import (
     ReportColumn,
     analyze_by_period,
@@ -60,6 +59,7 @@ from .core.exceptions import (
     ReaderError,
     ValidationError,
 )
+from .data import datasets
 from .data.cleaning import CleaningPolicy, CleaningReport, clean
 from .data.preprocessing import PreprocessedData, preprocess
 from .data.readers import read_all, read_input

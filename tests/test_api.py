@@ -1,4 +1,5 @@
 """Analysis orchestration and end-to-end report generation."""
+
 import math
 
 import numpy as np
@@ -37,10 +38,18 @@ def test_n_below_4_descriptive_only():
 
 
 def test_analyze_by_period_reindexes():
-    recs = [{COL_PERIOD: p, COL_HYDRO_YEAR: 2000 + i, "flow": 100 + (3 * i if p == "Apr-01" else -2 * i)}
-            for p in ("Apr-02", "Apr-01") for i in range(16)]
-    res = analyze_by_period(pd.DataFrame(recs), value_col="flow",
-                            order=["Apr-01", "Apr-02"])
+    recs = [
+        {
+            COL_PERIOD: p,
+            COL_HYDRO_YEAR: 2000 + i,
+            "flow": 100 + (3 * i if p == "Apr-01" else -2 * i),
+        }
+        for p in ("Apr-02", "Apr-01")
+        for i in range(16)
+    ]
+    res = analyze_by_period(
+        pd.DataFrame(recs), value_col="flow", order=["Apr-01", "Apr-02"]
+    )
     assert list(res.index) == ["Apr-01", "Apr-02"]
     assert res.loc["Apr-01", "trend"] == "increasing"
     assert res.loc["Apr-02", "trend"] == "decreasing"
@@ -53,7 +62,8 @@ def test_analyze_preprocessed_ordering(daily_pre):
 
 def test_generate_report_end_to_end(daily_pre, tmp_path):
     out = ht.generate_report(
-        daily_pre, tmp_path / "report.xlsx",
+        daily_pre,
+        tmp_path / "report.xlsx",
         columns=[ht.ReportColumn(COL_FLOW_CUSECS, "Cusecs")],
         title="Test Report",
     )

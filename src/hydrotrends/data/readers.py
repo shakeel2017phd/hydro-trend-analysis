@@ -3,7 +3,8 @@
 Each input is described by an :class:`~hydrotrends.core.config.InputSpec` that
 carries the file's path, its temporal resolution, and *its own* header names.
 :func:`read_input` reads one such file (CSV or ``.xlsx``/``.xlsm`` Excel) and
-returns a tidy frame with canonical columns — :data:`~hydrotrends.core.constants.COL_DATE` (datetime) and
+returns a tidy frame with canonical columns —
+:data:`~hydrotrends.core.constants.COL_DATE` (datetime) and
 :data:`~hydrotrends.core.constants.COL_FLOW_CUSECS` (mean flow, Cusecs) — so
 nothing downstream needs to know what the original headers were, and a daily and
 a 10-daily file with completely different headers can be loaded side by side.
@@ -89,9 +90,7 @@ def _parse_dekad_compact(raw: pd.Series) -> pd.Series:
     if not dekad.isin([1, 2, 3]).all():
         raise ValueError("dekad digit must be 1, 2 or 3")
     day = dekad.map(_DEKAD_START_DAY)
-    return pd.to_datetime(
-        {"year": year, "month": month.astype(int), "day": day}
-    )
+    return pd.to_datetime({"year": year, "month": month.astype(int), "day": day})
 
 
 def _parse_dates(raw: pd.Series, spec: InputSpec) -> pd.Series:
@@ -107,8 +106,7 @@ def _parse_dates(raw: pd.Series, spec: InputSpec) -> pd.Series:
         return pd.to_datetime(raw, format="mixed", dayfirst=day_first)
     except (ValueError, TypeError, KeyError) as err:
         raise ReaderError(
-            f"could not parse dates in column {spec.date_column!r} "
-            f"as {fmt.value}",
+            f"could not parse dates in column {spec.date_column!r} as {fmt.value}",
             path=str(spec.path),
         ) from err
 
@@ -154,9 +152,7 @@ def read_input(spec: InputSpec) -> pd.DataFrame:
         logger.info("scaled %r by %g", spec.value_column, spec.value_scale)
     n_negative = int((values < 0).sum())
     if n_negative:
-        logger.warning(
-            "%d negative flow value(s) in %s", n_negative, spec.path.name
-        )
+        logger.warning("%d negative flow value(s) in %s", n_negative, spec.path.name)
 
     out = pd.DataFrame({COL_DATE: dates, COL_FLOW_CUSECS: values})
     out = out.sort_values(COL_DATE, kind="stable").reset_index(drop=True)
@@ -176,8 +172,12 @@ def read_input(spec: InputSpec) -> pd.DataFrame:
 
     out.attrs["resolution"] = spec.resolution.value
     out.attrs["source_path"] = str(spec.path)
-    logger.info("  -> %d rows, %s to %s", len(out), out[COL_DATE].iloc[0].date(),
-                out[COL_DATE].iloc[-1].date())
+    logger.info(
+        "  -> %d rows, %s to %s",
+        len(out),
+        out[COL_DATE].iloc[0].date(),
+        out[COL_DATE].iloc[-1].date(),
+    )
     return out
 
 

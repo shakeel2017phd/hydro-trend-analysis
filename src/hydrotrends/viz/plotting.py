@@ -163,13 +163,23 @@ def ita_scatter(
             strict=False,
         ):
             ax.scatter(
-                xs[group], ys[group], color=color, edgecolor="k",
-                alpha=0.75, zorder=3, label=label,
+                xs[group],
+                ys[group],
+                color=color,
+                edgecolor="k",
+                alpha=0.75,
+                zorder=3,
+                label=label,
             )
     else:
         ax.scatter(
-            xs, ys, color=point_color, edgecolor="k", alpha=0.7,
-            zorder=3, label="Sorted pairs",
+            xs,
+            ys,
+            color=point_color,
+            edgecolor="k",
+            alpha=0.7,
+            zorder=3,
+            label="Sorted pairs",
         )
 
     lo = float(min(xs.min(), ys.min()))
@@ -182,8 +192,12 @@ def ita_scatter(
     ax.plot(lims, [x * 0.90 for x in lims], "r:", linewidth=1.5, label="-10%")
     mean_diff = float(ys.mean() - xs.mean())
     ax.plot(
-        lims, [x + mean_diff for x in lims], color="dodgerblue",
-        linestyle="--", linewidth=2, label="ITA trend shift",
+        lims,
+        [x + mean_diff for x in lims],
+        color="dodgerblue",
+        linestyle="--",
+        linewidth=2,
+        label="ITA trend shift",
     )
 
     ax.set_xlim(lims)
@@ -234,8 +248,10 @@ def flow_duration_curve_static(
     fig = Figure(figsize=figsize)
     ax = fig.subplots()
     ax.plot(
-        curve[COL_FDC_EXCEEDANCE], curve[COL_FDC_VALUE],
-        color=line_color, linewidth=2,
+        curve[COL_FDC_EXCEEDANCE],
+        curve[COL_FDC_VALUE],
+        color=line_color,
+        linewidth=2,
     )
 
     if flood_limits:
@@ -244,7 +260,11 @@ def flow_duration_curve_static(
             ax.axhline(threshold, linestyle=":", linewidth=1.3, color=color)
             ax.annotate(
                 _flood_annotation(label, threshold, data),
-                xy=(98, threshold), fontsize=8, color=color, ha="right", va="bottom",
+                xy=(98, threshold),
+                fontsize=8,
+                color=color,
+                ha="right",
+                va="bottom",
             )
 
     unit = f" ({unit_label})" if unit_label else ""
@@ -270,14 +290,18 @@ def flow_duration_curve_interactive(
     fig = go.Figure()
     fig.add_trace(
         go.Scatter(
-            x=curve[COL_FDC_EXCEEDANCE], y=curve[COL_FDC_VALUE], mode="lines",
-            name="Duration curve", line={"color": line_color, "width": 2},
+            x=curve[COL_FDC_EXCEEDANCE],
+            y=curve[COL_FDC_VALUE],
+            mode="lines",
+            name="Duration curve",
+            line={"color": line_color, "width": 2},
         )
     )
     if flood_limits:
         for label, threshold in flood_limits.items():
             fig.add_hline(
-                y=threshold, line_dash="dot",
+                y=threshold,
+                line_dash="dot",
                 line_color=FLOOD_COLORS.get(label, "gray"),
                 annotation_text=_flood_annotation(label, threshold, data),
                 annotation_position="right",
@@ -325,23 +349,34 @@ def trend_scatter(
     fig = Figure(figsize=figsize)
     ax = fig.subplots()
     ax.plot(
-        xa, ya, marker="o", markersize=4, color=point_color,
-        linewidth=1.2, label="Observations",
+        xa,
+        ya,
+        marker="o",
+        markersize=4,
+        color=point_color,
+        linewidth=1.2,
+        label="Observations",
     )
 
     if sen_slope is not None and np.isfinite(sen_slope.slope):
         intercept = float(np.median(ya) - sen_slope.slope * np.median(xa))
         ax.plot(
-            xa, sen_slope.slope * xa + intercept, color="#d62728",
-            linestyle="--", linewidth=2,
+            xa,
+            sen_slope.slope * xa + intercept,
+            color="#d62728",
+            linestyle="--",
+            linewidth=2,
             label=f"Sen's slope ({sen_slope.slope:.3f}/{slope_unit})",
         )
 
     if linear_fit is not None and np.isfinite(linear_fit.slope):
         intercept = float(ya.mean() - linear_fit.slope * xa.mean())
         ax.plot(
-            xa, linear_fit.slope * xa + intercept, color="#ff7f0e",
-            linestyle=":", linewidth=1.8,
+            xa,
+            linear_fit.slope * xa + intercept,
+            color="#ff7f0e",
+            linestyle=":",
+            linewidth=1.8,
             label=f"OLS ({linear_fit.slope:.3f}/{slope_unit})",
         )
 
@@ -401,13 +436,28 @@ def distribution_grid(
             sns.histplot(
                 series, kde=True, ax=ax, color="skyblue", stat="count", alpha=0.6
             )
-            ax.axvline(mean_val, color="red", linestyle="--", linewidth=1.3,
-                       label=f"Mean: {mean_val:.1f}")
-            ax.axvline(median_val, color="purple", linestyle="-", linewidth=1.3,
-                       label=f"Median: {median_val:.1f}")
+            ax.axvline(
+                mean_val,
+                color="red",
+                linestyle="--",
+                linewidth=1.3,
+                label=f"Mean: {mean_val:.1f}",
+            )
+            ax.axvline(
+                median_val,
+                color="purple",
+                linestyle="-",
+                linewidth=1.3,
+                label=f"Median: {median_val:.1f}",
+            )
             ax.axvline(mean_val - std_val, color="green", linestyle=":", linewidth=1)
-            ax.axvline(mean_val + std_val, color="green", linestyle=":", linewidth=1,
-                       label="+/-Std Dev")
+            ax.axvline(
+                mean_val + std_val,
+                color="green",
+                linestyle=":",
+                linewidth=1,
+                label="+/-Std Dev",
+            )
             ax.set_title(str(period), fontsize=11, fontweight="bold")
             ax.set_xlabel(f"Value{unit}", fontsize=8)
             ax.set_ylabel("Count", fontsize=8)
@@ -448,8 +498,12 @@ def flood_heatmap(
     fig = Figure(figsize=figsize)
     ax = fig.subplots()
     sns.heatmap(
-        pivot, cmap="YlOrRd", cbar_kws={"label": "Exceedance Count"},
-        ax=ax, linewidths=0.3, linecolor="white",
+        pivot,
+        cmap="YlOrRd",
+        cbar_kws={"label": "Exceedance Count"},
+        ax=ax,
+        linewidths=0.3,
+        linecolor="white",
     )
     ax.set_title(title, fontweight="bold")
     ax.set_xlabel(period_label)

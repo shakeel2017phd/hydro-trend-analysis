@@ -1,7 +1,8 @@
 """Row-level preprocessing for :mod:`hydrotrends`.
 
 Takes a canonical frame from :mod:`hydrotrends.data.readers` (columns
-``Date`` + ``Inflow_Cusecs``) plus its :class:`~hydrotrends.core.constants.TimeResolution`
+``Date`` + ``Inflow_Cusecs``) plus its
+:class:`~hydrotrends.core.constants.TimeResolution`
 and produces the enriched, quality-filtered frames the analysis runs on.
 
 What it adds
@@ -72,9 +73,7 @@ _JUNE = 6  # the month the Kharif season splits within
 
 # Month number -> meteorological season label (inverted from MET_SEASONS).
 _MONTH_TO_MET_SEASON: dict[int, str] = {
-    month: season.value
-    for season, months in MET_SEASONS.items()
-    for month in months
+    month: season.value for season, months in MET_SEASONS.items() for month in months
 }
 
 
@@ -83,8 +82,8 @@ class PreprocessedData:
     """Enriched, quality-filtered frames for one input at one resolution."""
 
     resolution: TimeResolution
-    hydro: pd.DataFrame       # rows within complete hydrological years
-    calendar: pd.DataFrame    # rows within complete calendar years
+    hydro: pd.DataFrame  # rows within complete hydrological years
+    calendar: pd.DataFrame  # rows within complete calendar years
 
 
 def _cropping_season(df: pd.DataFrame) -> np.ndarray:
@@ -175,9 +174,7 @@ def _filter_complete_years(
         incomplete = {int(p) for p in df[period_col].unique()} - complete
 
     if incomplete:
-        logger.warning(
-            "dropped incomplete %s year(s): %s", kind, sorted(incomplete)
-        )
+        logger.warning("dropped incomplete %s year(s): %s", kind, sorted(incomplete))
     kept: pd.DataFrame = df[df[period_col].isin(complete)].copy()
     return kept
 

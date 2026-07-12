@@ -62,9 +62,14 @@ def _empty() -> ITAResult:
     empty = np.empty(0, dtype="float64")
     nan = float("nan")
     return ITAResult(
-        slope=nan, trend=TrendDirection.NO_TREND, n_used=0,
-        first_half=empty, second_half=empty,
-        low_slope=nan, medium_slope=nan, high_slope=nan,
+        slope=nan,
+        trend=TrendDirection.NO_TREND,
+        n_used=0,
+        first_half=empty,
+        second_half=empty,
+        low_slope=nan,
+        medium_slope=nan,
+        high_slope=nan,
     )
 
 

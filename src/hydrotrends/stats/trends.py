@@ -78,7 +78,7 @@ def _mk_s(x: np.ndarray) -> float:
     n = len(x)
     s = 0.0
     for k in range(n - 1):
-        s += float(np.sign(x[k + 1:] - x[k]).sum())
+        s += float(np.sign(x[k + 1 :] - x[k]).sum())
     return s
 
 
@@ -126,9 +126,7 @@ def sens_slope(data: ArrayLike) -> SenSlope:
     if n < 2:
         return SenSlope(float("nan"), float("nan"))
     t = np.arange(n, dtype="float64")
-    slopes = [
-        (x[j] - x[i]) / (j - i) for i in range(n - 1) for j in range(i + 1, n)
-    ]
+    slopes = [(x[j] - x[i]) / (j - i) for i in range(n - 1) for j in range(i + 1, n)]
     if not slopes:
         return SenSlope(float("nan"), float("nan"))
     slope = float(np.median(slopes))
@@ -164,7 +162,11 @@ def mann_kendall_modified(
         rho = num / den if den != 0 else 0.0
         if abs(rho) >= threshold:
             n_ns += (
-                2 * (n - lag) * (n - lag - 1) * (n - lag - 2) * rho
+                2
+                * (n - lag)
+                * (n - lag - 1)
+                * (n - lag - 2)
+                * rho
                 / (n * (n - 1) * (n - 2))
             )
     z, p = _z_and_p(s, var_s * n_ns)

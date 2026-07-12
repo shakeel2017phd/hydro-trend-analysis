@@ -96,7 +96,9 @@ class MissingColumnError(DataError):
         available: Iterable[str] | None = None,
     ) -> None:
         self.missing: tuple[str, ...] = tuple(missing)
-        self.available: tuple[str, ...] = tuple(available) if available is not None else ()
+        self.available: tuple[str, ...] = (
+            tuple(available) if available is not None else ()
+        )
         message = f"missing required column(s): {', '.join(self.missing) or '<none>'}"
         if self.available:
             message += f"; available columns: {', '.join(self.available)}"
@@ -129,9 +131,7 @@ class InsufficientDataError(ValidationError):
         self.required = required
         self.operation = operation
         what = f"{operation} " if operation else ""
-        super().__init__(
-            f"{what}needs at least {required} observation(s), got {n}"
-        )
+        super().__init__(f"{what}needs at least {required} observation(s), got {n}")
 
 
 class NonMonotonicIndexError(ValidationError):

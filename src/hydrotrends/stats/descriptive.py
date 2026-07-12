@@ -77,17 +77,28 @@ class DescriptiveStats:
     def to_series(self) -> pd.Series:
         """Pretty-labelled Series (source column order), handy for tables."""
         data = asdict(self)
-        return pd.Series(
-            {label: data[field] for field, label in _LABELS.items()}
-        )
+        return pd.Series({label: data[field] for field, label in _LABELS.items()})
 
 
 def _empty() -> DescriptiveStats:
     nan = float("nan")
     return DescriptiveStats(
-        n=0, mean=nan, median=nan, std=nan, cv_pct=nan, minimum=nan,
-        p10=nan, p25=nan, p75=nan, p90=nan, maximum=nan, iqr=nan,
-        value_range=nan, skewness=nan, kurtosis=nan, total=nan,
+        n=0,
+        mean=nan,
+        median=nan,
+        std=nan,
+        cv_pct=nan,
+        minimum=nan,
+        p10=nan,
+        p25=nan,
+        p75=nan,
+        p90=nan,
+        maximum=nan,
+        iqr=nan,
+        value_range=nan,
+        skewness=nan,
+        kurtosis=nan,
+        total=nan,
     )
 
 

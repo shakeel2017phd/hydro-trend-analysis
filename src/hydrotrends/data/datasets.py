@@ -8,8 +8,8 @@ examples, tests, and quick experiments work with zero setup::
     ds.available_datasets()          # ['tarbela_10daily', 'tarbela_daily']
     df   = ds.load("tarbela_daily")           # canonical frame
     pre  = ds.load_preprocessed("tarbela_daily")
-    spec = ds.dataset_spec("tarbela_10daily") # the InputSpec (scale + date format wired in)
-
+    spec = ds.dataset_spec("tarbela_10daily") # its InputSpec (scale + format)
+    
 Each dataset already knows its resolution, value scaling, and date encoding, so
 the 10-daily sample transparently exercises ``value_scale=1000`` and
 ``date_format="dekad_compact"``.

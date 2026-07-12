@@ -43,7 +43,7 @@ class CleaningPolicy:
     missing: OnIssue = OnIssue.DROP
     duplicate_dates: OnIssue = OnIssue.DROP
     negatives: OnIssue = OnIssue.KEEP
-    missing_fill: FillMethod = FillMethod.NONE   # impute value gaps before `missing`
+    missing_fill: FillMethod = FillMethod.NONE  # impute value gaps before `missing`
 
     def __post_init__(self) -> None:
         for field_name in ("missing", "duplicate_dates", "negatives"):
@@ -167,7 +167,10 @@ def _fill_missing(
     date_col: str,
     value_col: str,
 ) -> int:
-    """Impute missing values in ``value_col`` (rows with a valid date). Returns count filled."""
+    """Impute missing values in ``value_col`` (rows with a valid date).
+
+    Returns the number of values filled.
+    """
     if method is FillMethod.NONE:
         return 0
     fillable = work[value_col].isna() & work[date_col].notna()
