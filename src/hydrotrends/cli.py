@@ -1,8 +1,9 @@
 """Command-line interface for :mod:`hydrotrends`.
 
 Exposes the ``hydro-trend`` command, which runs the full pipeline —
-read -> clean -> preprocess -> analyse -> report — and writes an ``.xlsx``
-workbook per input.
+read -> clean -> preprocess -> analyse -> report — and writes one ``.xlsx``
+workbook per flow/volume unit pairing for each input (Cusecs+MAF, Cumecs+BCM
+by default), matching the source script's two-workbook-per-run deliverable.
 
 Two ways to specify inputs:
 
@@ -142,6 +143,27 @@ def _output_path(output: str, spec: InputSpec, *, single: bool) -> Path:
     return out / f"{spec.path.stem}_report.xlsx"
 
 
+def _unit_report_path(
+    output: str, spec: InputSpec, rc: ReportColumn, *, single: bool
+) -> Path:
+    """Per-unit-pair sibling of :func:`_output_path`, used when a run has more
+    than one :class:`~hydrotrends.api.ReportColumn`.
+
+    Rather than bundling every flow unit into one workbook, each flow/volume
+    pairing gets its own file, suffixed with its unit label(s) — e.g.
+    ``..._Cusecs_MAF.xlsx`` / ``..._Cumecs_BCM.xlsx`` — restoring the source
+    script's two-workbook-per-run deliverable (``Tarbela_DAILY_Cusecs_MAF.xlsx``
+    / ``Tarbela_DAILY_Cumecs_BCM.xlsx``).
+    """
+    base = _output_path(output, spec, single=single)
+    unit_tag = (
+        f"{rc.unit_label}_{rc.volume_unit_label}"
+        if rc.volume_unit_label
+        else rc.unit_label
+    )
+    return base.with_name(f"{base.stem}_{unit_tag}{base.suffix}")
+
+
 def _cmd_analyze(args: argparse.Namespace) -> int:
     level = ("WARNING", "INFO", "DEBUG")[min(args.verbose, 2)]
     configure_logging(level)
@@ -160,6 +182,7 @@ def _cmd_analyze(args: argparse.Namespace) -> int:
         for unit in config.flow_units
     ]
     single = len(config.inputs) == 1
+    multi_unit = len(columns) > 1
 
     for spec, raw in read_all(config):
         frame = raw
@@ -167,19 +190,28 @@ def _cmd_analyze(args: argparse.Namespace) -> int:
             frame, report = clean(raw)
             logger.info("cleaning %s: %s", spec.path.name, report.summary())
         pre = preprocess(frame, spec.resolution)
-        out = _output_path(args.output, spec, single=single)
-        generate_report(
-            pre,
-            out,
-            columns=columns,
-            title=f"{spec.path.stem} — Trend Analysis",
-            subtitle=_SUBTITLE,
-            calendar=args.calendar,
-            include_descriptive=not args.no_descriptive,
-            alpha=config.alpha,
-            season_schemes=config.season_schemes,
-        )
-        logger.warning("wrote %s", out)  # always visible (default level)
+
+        if multi_unit:
+            outputs = [
+                (rc, _unit_report_path(args.output, spec, rc, single=single))
+                for rc in columns
+            ]
+        else:
+            outputs = [(columns[0], _output_path(args.output, spec, single=single))]
+
+        for rc, out in outputs:
+            generate_report(
+                pre,
+                out,
+                columns=[rc],
+                title=f"{spec.path.stem} — Trend Analysis ({rc.unit_label})",
+                subtitle=_SUBTITLE,
+                calendar=args.calendar,
+                include_descriptive=not args.no_descriptive,
+                alpha=config.alpha,
+                season_schemes=config.season_schemes,
+            )
+            logger.warning("wrote %s", out)  # always visible (default level)
     return 0
 
 
