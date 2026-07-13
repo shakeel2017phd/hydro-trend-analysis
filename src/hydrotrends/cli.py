@@ -28,8 +28,12 @@ from .core.config import Config, InputSpec
 from .core.constants import (
     COL_FLOW_CUMECS,
     COL_FLOW_CUSECS,
+    COL_VOL_BCM,
+    COL_VOL_MAF,
     DEFAULT_ALPHA,
+    UNIT_PAIRS,
     FlowUnit,
+    VolumeUnit,
 )
 from .core.exceptions import HydroTrendsError
 from .core.logging_config import configure_logging, get_logger
@@ -47,6 +51,7 @@ except PackageNotFoundError:  # not installed (e.g. run from a source checkout)
     _VERSION = "0.0.0"
 
 _FLOW_COLUMN = {FlowUnit.CUSECS: COL_FLOW_CUSECS, FlowUnit.CUMECS: COL_FLOW_CUMECS}
+_VOLUME_COLUMN = {VolumeUnit.MAF: COL_VOL_MAF, VolumeUnit.BCM: COL_VOL_BCM}
 _SUBTITLE = "Mann-Kendall | Sen's Slope | ITA | Change-Point"
 
 
@@ -146,7 +151,13 @@ def _cmd_analyze(args: argparse.Namespace) -> int:
         raise HydroTrendsError("configuration lists no inputs")
 
     columns = [
-        ReportColumn(_FLOW_COLUMN[unit], unit.value) for unit in config.flow_units
+        ReportColumn(
+            _FLOW_COLUMN[unit],
+            unit.value,
+            volume_column=_VOLUME_COLUMN[UNIT_PAIRS[unit]],
+            volume_unit_label=UNIT_PAIRS[unit].value,
+        )
+        for unit in config.flow_units
     ]
     single = len(config.inputs) == 1
 

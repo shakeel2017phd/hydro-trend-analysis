@@ -64,7 +64,14 @@ from ..core.constants import (
 from ..core.logging_config import get_logger
 from ..core.validation import find_complete_periods
 
-__all__ = ["PreprocessedData", "enrich", "preprocess", "preprocess_all"]
+__all__ = [
+    "PreprocessedData",
+    "enrich",
+    "preprocess",
+    "preprocess_all",
+    "monthly_volumes",
+    "seasonal_volumes",
+]
 
 logger = get_logger(__name__)
 
@@ -74,6 +81,22 @@ _JUNE = 6  # the month the Kharif season splits within
 # Month number -> meteorological season label (inverted from MET_SEASONS).
 _MONTH_TO_MET_SEASON: dict[int, str] = {
     month: season.value for season, months in MET_SEASONS.items() for month in months
+}
+
+# Which per-day Season values roll up into each named seasonal/annual total.
+# ``Kharif`` is Early + Late combined; ``Annual`` is every season (the source's
+# ``season_dfs`` builds these from ``df_hy`` the same way: an unfiltered
+# ``groupby("HydroYear")`` for Annual, a Season-filtered one for the rest).
+_SEASON_MEMBERSHIP: dict[str, tuple[str, ...]] = {
+    Season.EARLY_KHARIF.value: (Season.EARLY_KHARIF.value,),
+    Season.LATE_KHARIF.value: (Season.LATE_KHARIF.value,),
+    Season.KHARIF.value: (Season.EARLY_KHARIF.value, Season.LATE_KHARIF.value),
+    Season.RABI.value: (Season.RABI.value,),
+    Season.ANNUAL.value: (
+        Season.EARLY_KHARIF.value,
+        Season.LATE_KHARIF.value,
+        Season.RABI.value,
+    ),
 }
 
 
@@ -210,3 +233,38 @@ def preprocess_all(
 ) -> list[tuple[InputSpec, PreprocessedData]]:
     """Preprocess every ``(spec, frame)`` pair from :func:`readers.read_all`."""
     return [(spec, preprocess(df, spec.resolution)) for spec, df in loaded]
+
+
+def monthly_volumes(hydro: pd.DataFrame) -> pd.DataFrame:
+    """Per-hydrological-year, per-calendar-month total volumes.
+
+    One row per ``(HydroYear, Month)``, summing ``Vol_MAF``/``Vol_BCM`` across
+    every row that falls in it. Each row already carries the correct
+    day-count-scaled volume via :func:`enrich`, so this is correct for daily and
+    10-daily input alike. Mirrors the source's ``monthly_vol`` grouping.
+    """
+    return (
+        hydro.groupby([COL_HYDRO_YEAR, COL_MONTH, COL_MONTH_NUM])[
+            [COL_VOL_MAF, COL_VOL_BCM]
+        ]
+        .sum()
+        .reset_index()
+        .sort_values([COL_HYDRO_YEAR, COL_MONTH_NUM])
+        .reset_index(drop=True)
+    )
+
+
+def seasonal_volumes(hydro: pd.DataFrame) -> dict[str, pd.DataFrame]:
+    """Per-hydrological-year seasonal and annual total volumes.
+
+    Keyed ``Early_Kharif``/``Late_Kharif``/``Kharif``/``Rabi``/``Annual``
+    (mirrors the source's ``season_dfs``); each value is a frame indexed by
+    ``HydroYear`` with summed ``Vol_MAF``/``Vol_BCM``. ``Kharif`` is Early +
+    Late Kharif combined; ``Annual`` is every season combined.
+    """
+    return {
+        name: hydro[hydro[COL_SEASON].isin(members)]
+        .groupby(COL_HYDRO_YEAR)[[COL_VOL_MAF, COL_VOL_BCM]]
+        .sum()
+        for name, members in _SEASON_MEMBERSHIP.items()
+    }

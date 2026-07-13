@@ -39,11 +39,12 @@ from .core.constants import (
     COL_PERIOD,
     COL_YEAR,
     DEFAULT_ALPHA,
+    HYDRO_MONTHS,
     MOVING_AVERAGE_WINDOW,
     RESOLUTION_INFO,
 )
 from .core.utils import significance_stars, to_float_array
-from .data.preprocessing import PreprocessedData
+from .data.preprocessing import PreprocessedData, monthly_volumes, seasonal_volumes
 from .stats.changepoint import (
     bai_perron_change_point,
     cusum_change_point,
@@ -65,9 +66,30 @@ __all__ = [
     "analyze_series",
     "analyze_by_period",
     "analyze_preprocessed",
+    "analyze_monthly_volumes",
+    "analyze_seasonal_volumes",
+    "describe_monthly_volumes",
+    "describe_seasonal_volumes",
     "ReportColumn",
     "generate_report",
 ]
+
+# Season/annual rollups in report order, with the source's display labels
+# (``build_workbook``'s ``slabels`` / ``season_order``).
+_SEASON_ORDER: tuple[str, ...] = (
+    "Early_Kharif",
+    "Late_Kharif",
+    "Kharif",
+    "Rabi",
+    "Annual",
+)
+_SEASON_LABELS: dict[str, str] = {
+    "Early_Kharif": "Early Kharif  (Apr1–Jun10)",
+    "Late_Kharif": "Late Kharif   (Jun11–Sep30)",
+    "Kharif": "Kharif        (Apr1–Sep30)",
+    "Rabi": "Rabi          (Oct1–Mar31)",
+    "Annual": "Annual        (Apr1–Mar31)",
+}
 
 _MIN_FOR_TRENDS = 4  # matches the source's n < 4 guard
 
@@ -255,12 +277,106 @@ def analyze_preprocessed(
     )
 
 
+def analyze_monthly_volumes(
+    hydro: pd.DataFrame,
+    *,
+    value_col: str,
+    alpha: float = DEFAULT_ALPHA,
+) -> pd.DataFrame:
+    """Trend analysis of total monthly volume, across hydrological years.
+
+    One row per hydrological month (``HYDRO_MONTHS`` order: Apr...Mar). Each
+    row's series is that calendar month's total volume (``value_col``, e.g.
+    ``Vol_MAF``) for every hydrological year on record — the across-years
+    series :func:`analyze_series` runs its trend tests on. Mirrors the
+    source's ``RESULTS["monthly_<col>"]``.
+    """
+    monthly = monthly_volumes(hydro)
+    rows: dict[str, dict[str, Any]] = {}
+    for month, group in monthly.groupby("Month", sort=False):
+        ordered = group.sort_values(COL_HYDRO_YEAR)
+        rows[str(month)] = analyze_series(
+            ordered[value_col], years=ordered[COL_HYDRO_YEAR].to_numpy(), alpha=alpha
+        )
+    result = pd.DataFrame.from_dict(rows, orient="index")
+    result = _reindex_to_order(result, HYDRO_MONTHS)
+    result.index.name = "Month"
+    return result
+
+
+def analyze_seasonal_volumes(
+    hydro: pd.DataFrame,
+    *,
+    value_col: str,
+    alpha: float = DEFAULT_ALPHA,
+) -> pd.DataFrame:
+    """Trend analysis of total seasonal/annual volume, across hydrological years.
+
+    One row per season, in ``Early_Kharif``/``Late_Kharif``/``Kharif``/``Rabi``/
+    ``Annual`` order (the source's ``season_order``); each row's series is that
+    season's yearly total volume (``value_col``). Mirrors the source's
+    ``RESULTS["seasonal_<name>_<col>"]``.
+    """
+    seasonal = seasonal_volumes(hydro)
+    rows = {
+        _SEASON_LABELS[name]: analyze_series(
+            seasonal[name][value_col].sort_index(),
+            years=seasonal[name].sort_index().index.to_numpy(),
+            alpha=alpha,
+        )
+        for name in _SEASON_ORDER
+    }
+    result = pd.DataFrame.from_dict(rows, orient="index")
+    result.index.name = "Season"
+    return result
+
+
+def describe_monthly_volumes(hydro: pd.DataFrame, *, value_col: str) -> pd.DataFrame:
+    """Descriptive statistics of total monthly volume, across hydrological years.
+
+    Companion to :func:`analyze_monthly_volumes`: descriptive-only (no trend
+    tests), one row per hydrological month.
+    """
+    monthly = monthly_volumes(hydro)
+    result = _reindex_to_order(
+        describe_by(monthly, value_col=value_col, by="Month"), HYDRO_MONTHS
+    )
+    result.index.name = "Month"
+    return result
+
+
+def describe_seasonal_volumes(hydro: pd.DataFrame, *, value_col: str) -> pd.DataFrame:
+    """Descriptive statistics of total seasonal/annual volume, across hydro years.
+
+    Companion to :func:`analyze_seasonal_volumes`: descriptive-only (no trend
+    tests), one row per season in ``_SEASON_ORDER``.
+    """
+    seasonal = seasonal_volumes(hydro)
+    rows = {
+        _SEASON_LABELS[name]: describe(seasonal[name][value_col]).to_dict()
+        for name in _SEASON_ORDER
+    }
+    result = pd.DataFrame.from_dict(rows, orient="index")
+    result.index.name = "Season"
+    return result
+
+
 @dataclass(frozen=True)
 class ReportColumn:
-    """One column to analyse in a report, with its display unit label."""
+    """One column to analyse in a report, with its display unit label.
+
+    ``volume_column``/``volume_unit_label`` are optional: when set, the report
+    also gets monthly and seasonal/annual *volume* trend (and, if
+    ``include_descriptive``, descriptive) sheets for this flow/volume pairing —
+    e.g. ``COL_FLOW_CUSECS`` paired with ``COL_VOL_MAF``, matching the source's
+    per-workbook flow/volume unit pairing (see
+    :data:`~hydrotrends.core.constants.UNIT_PAIRS`).
+    """
 
     column: str  # DataFrame column, e.g. COL_FLOW_CUSECS
     unit_label: str  # e.g. "Cusecs", "Cumecs", "MAF"
+    volume_column: str | None = None  # e.g. COL_VOL_MAF; None skips volume sheets
+    volume_unit_label: str | None = None  # e.g. "MAF"
 
 
 def generate_report(
@@ -314,6 +430,47 @@ def generate_report(
                 index_label="Period",
                 unit=rc.unit_label,
             )
+
+        if rc.volume_column is not None:
+            vol_unit = rc.volume_unit_label or ""
+            monthly_trend = analyze_monthly_volumes(
+                pre.hydro, value_col=rc.volume_column, alpha=alpha
+            )
+            write_results_sheet(
+                wb.create_sheet(f"Monthly Trends ({vol_unit})"),
+                monthly_trend,
+                title=f"{title} — Monthly Volume Trend ({vol_unit})",
+                index_label="Month",
+                unit=vol_unit,
+            )
+            seasonal_trend = analyze_seasonal_volumes(
+                pre.hydro, value_col=rc.volume_column, alpha=alpha
+            )
+            write_results_sheet(
+                wb.create_sheet(f"Seasonal Trends ({vol_unit})"),
+                seasonal_trend,
+                title=f"{title} — Seasonal & Annual Volume Trend ({vol_unit})",
+                index_label="Season",
+                unit=vol_unit,
+            )
+            if include_descriptive:
+                write_descriptive_sheet(
+                    wb.create_sheet(f"Monthly Descriptive ({vol_unit})"),
+                    describe_monthly_volumes(pre.hydro, value_col=rc.volume_column),
+                    title=f"Descriptive Statistics — Monthly Volume ({vol_unit})",
+                    index_label="Month",
+                    unit=vol_unit,
+                )
+                write_descriptive_sheet(
+                    wb.create_sheet(f"Seasonal Descriptive ({vol_unit})"),
+                    describe_seasonal_volumes(pre.hydro, value_col=rc.volume_column),
+                    title=(
+                        f"Descriptive Statistics — Seasonal & Annual Volume "
+                        f"({vol_unit})"
+                    ),
+                    index_label="Season",
+                    unit=vol_unit,
+                )
 
     wb.remove(default)
     out = Path(output_path)

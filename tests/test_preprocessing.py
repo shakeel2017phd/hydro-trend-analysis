@@ -68,3 +68,59 @@ def test_daily_and_tendaily_annual_volume_agree(daily_pre, tendaily_pre):
     tt = tendaily_pre.hydro.groupby(k.COL_HYDRO_YEAR)[k.COL_VOL_MAF].sum()
     for yr in dd.index:
         assert abs(dd[yr] - tt[yr]) / dd[yr] < 0.02
+
+
+def test_monthly_volumes_matches_manual_groupby(daily_pre):
+    monthly = ht.monthly_volumes(daily_pre.hydro)
+    assert set(monthly.columns) == {
+        k.COL_HYDRO_YEAR,
+        k.COL_MONTH,
+        k.COL_MONTH_NUM,
+        k.COL_VOL_MAF,
+        k.COL_VOL_BCM,
+    }
+    expect = (
+        daily_pre.hydro.groupby([k.COL_HYDRO_YEAR, k.COL_MONTH])[k.COL_VOL_MAF]
+        .sum()
+        .rename("expect")
+    )
+    got = monthly.set_index([k.COL_HYDRO_YEAR, k.COL_MONTH])[k.COL_VOL_MAF]
+    pd.testing.assert_series_equal(
+        got.sort_index(), expect.sort_index(), check_names=False
+    )
+
+
+def test_monthly_volumes_sorted_by_year_then_calendar_month():
+    # Matches the source's `monthly_vol` sort exactly: within a hydro year,
+    # rows are ordered by calendar MonthNum (Jan..Dec), not hydro-month order.
+    # analyze_monthly_volumes() is what reorders to Apr..Mar for reporting.
+    pre = ht.preprocess(_daily_year(), k.TimeResolution.DAILY)
+    monthly = ht.monthly_volumes(pre.hydro)
+    assert list(monthly[k.COL_MONTH_NUM]) == sorted(monthly[k.COL_MONTH_NUM])
+
+
+def test_seasonal_volumes_kharif_is_early_plus_late(daily_pre):
+    seasonal = ht.seasonal_volumes(daily_pre.hydro)
+    assert set(seasonal) == {
+        "Early_Kharif",
+        "Late_Kharif",
+        "Kharif",
+        "Rabi",
+        "Annual",
+    }
+    combined = (
+        seasonal["Early_Kharif"][k.COL_VOL_MAF] + seasonal["Late_Kharif"][k.COL_VOL_MAF]
+    )
+    pd.testing.assert_series_equal(
+        seasonal["Kharif"][k.COL_VOL_MAF], combined, check_names=False
+    )
+
+
+def test_seasonal_volumes_annual_is_everything(daily_pre):
+    seasonal = ht.seasonal_volumes(daily_pre.hydro)
+    whole_year = daily_pre.hydro.groupby(k.COL_HYDRO_YEAR)[k.COL_VOL_MAF].sum()
+    pd.testing.assert_series_equal(
+        seasonal["Annual"][k.COL_VOL_MAF].sort_index(),
+        whole_year.sort_index(),
+        check_names=False,
+    )

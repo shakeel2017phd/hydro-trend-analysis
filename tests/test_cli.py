@@ -20,6 +20,20 @@ def test_analyze_single_input(tmp_path):
     assert "Cover" in load_workbook(out).sheetnames
 
 
+def test_analyze_writes_monthly_and_seasonal_volume_sheets(tmp_path):
+    """Every flow unit is paired with its volume unit (UNIT_PAIRS) by default,
+    so a plain run gets the monthly/seasonal/annual volume trend sheets too."""
+    out = tmp_path / "r.xlsx"
+    cli.main(
+        ["analyze", _daily_csv(), "-o", str(out), "--value-column", "inflow_cusec"]
+    )
+    sheets = load_workbook(out).sheetnames
+    assert "Monthly Trends (MAF)" in sheets
+    assert "Seasonal Trends (MAF)" in sheets
+    assert "Monthly Trends (BCM)" in sheets
+    assert "Seasonal Trends (BCM)" in sheets
+
+
 def test_no_descriptive(tmp_path):
     out = tmp_path / "r.xlsx"
     cli.main(
