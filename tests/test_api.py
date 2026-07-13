@@ -11,10 +11,13 @@ from hydrotrends.api import analyze_by_period, analyze_series
 from hydrotrends.core.config import SeasonScheme
 from hydrotrends.core.constants import (
     COL_DATE,
+    COL_DAY,
     COL_FLOW_CUSECS,
     COL_HYDRO_YEAR,
+    COL_MONTH,
     COL_PERIOD,
     COL_VOL_MAF,
+    COL_YEAR,
     HYDRO_MONTHS,
     TimeResolution,
 )
@@ -80,6 +83,43 @@ def test_analyze_by_period_reindexes():
 def test_analyze_preprocessed_ordering(daily_pre):
     res = ht.analyze_preprocessed(daily_pre, value_col=COL_FLOW_CUSECS)
     assert len(res) == 366 and res.index[0] == "Apr-01"
+
+
+def test_analyze_preprocessed_change_point_uses_calendar_year_not_hydro_year():
+    """Jan/Feb/Mar periods belong to HydroYear = Year - 1. The source script's
+    daily/10-daily tables group the hydro-year-filtered frame by Period but
+    always sort by and report calendar Year for change-point mapping (never
+    HydroYear) -- confirmed straight from the source's Section 5 loop. This
+    locks in that behaviour so it can't silently regress back to HydroYear."""
+    frames = []
+    for start_year in range(2010, 2020):
+        dates = pd.date_range(f"{start_year}-04-01", f"{start_year + 1}-03-31")
+        frames.append(
+            pd.DataFrame({COL_DATE: dates, COL_FLOW_CUSECS: np.full(len(dates), 5.0)})
+        )
+    df = pd.concat(frames, ignore_index=True)
+
+    # Step the Jan-15 value only: low for the first half of hydro years on
+    # record, high for the second half.
+    is_jan15 = (df[COL_DATE].dt.month == 1) & (df[COL_DATE].dt.day == 15)
+    jan15_dates = df.loc[is_jan15, COL_DATE].sort_values()
+    later_half = jan15_dates.iloc[len(jan15_dates) // 2 :]
+    df.loc[df[COL_DATE].isin(later_half), COL_FLOW_CUSECS] = 9.0
+
+    pre = ht.preprocess(df, TimeResolution.DAILY)
+    result = ht.analyze_preprocessed(pre, value_col=COL_FLOW_CUSECS)
+    row = result.loc["Jan-15"]
+
+    jan15_rows = pre.hydro[
+        (pre.hydro[COL_MONTH] == "Jan") & (pre.hydro[COL_DAY] == 15)
+    ].sort_values(COL_YEAR)
+    expected = ht.pettitt_test(jan15_rows[COL_FLOW_CUSECS].to_numpy())
+    calendar_years = jan15_rows[COL_YEAR].to_numpy()
+    hydro_years = jan15_rows[COL_HYDRO_YEAR].to_numpy()
+
+    assert expected.index is not None
+    assert row["pettitt_cp_year"] == calendar_years[expected.index]
+    assert row["pettitt_cp_year"] != hydro_years[expected.index]  # guards the fix
 
 
 def test_generate_report_end_to_end(daily_pre, tmp_path):
@@ -195,9 +235,7 @@ def test_generate_report_omits_volume_sheets_without_pairing(daily_pre, tmp_path
         title="Test Report",
     )
     wb = load_workbook(out)
-    assert not any(
-        "Monthly Trends" in s or "Season Trends" in s for s in wb.sheetnames
-    )
+    assert not any("Monthly Trends" in s or "Season Trends" in s for s in wb.sheetnames)
 
 
 def test_generate_report_season_schemes_gating(tmp_path):

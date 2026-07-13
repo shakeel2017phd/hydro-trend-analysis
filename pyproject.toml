@@ -115,6 +115,11 @@ addopts = "-ra --strict-markers --strict-config"
 [tool.ruff]
 line-length = 88
 target-version = "py311"
+# Verbatim copy of the source script's statistical core, kept unformatted on
+# purpose (see its module docstring) so it stays a faithful, diffable
+# reference for the v26 parity tests -- excluded from both lint and format,
+# not just house style.
+extend-exclude = ["tests/reference_v26_core.py"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "SIM", "B"]

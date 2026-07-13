@@ -282,18 +282,29 @@ def analyze_preprocessed(
     """Per-period analysis of a preprocessed input, in the right period order.
 
     Uses the hydrological-year frame by default (``calendar=True`` for the
-    calendar-year frame), and picks the matching period-label order and year
-    column for the input's resolution.
+    calendar-year frame), and picks the matching period-label order for the
+    input's resolution.
+
+    The year axis (used for sorting each period's across-years series and for
+    change-point-year mapping) is always the plain calendar ``Year`` column,
+    matching the source script exactly: its per-period daily/10-daily tables
+    group the hydro-year-filtered frame by Period but always sort by and
+    report calendar ``Year`` (``sub["Year"].values``), never ``HydroYear`` --
+    even though the frame itself is hydro-year-filtered. This only affects the
+    reported change-point *year label* for periods that fall in Jan/Feb/Mar
+    (where ``Year == HydroYear + 1``); trend-test results are identical either
+    way, since ``Year`` and ``HydroYear`` differ by the same constant offset
+    for every row of a given Period, so sorting by one or the other yields the
+    same row order.
     """
     frame = pre.calendar if calendar else pre.hydro
     info = RESOLUTION_INFO[pre.resolution]
     order = list(info.cal_periods if calendar else info.hydro_periods)
-    year_col = COL_YEAR if calendar else COL_HYDRO_YEAR
     return analyze_by_period(
         frame,
         value_col=value_col,
         period_col=COL_PERIOD,
-        year_col=year_col,
+        year_col=COL_YEAR,
         order=order,
         alpha=alpha,
     )
@@ -544,8 +555,7 @@ def generate_report(
                     wb.create_sheet(f"Hydro Season Trends ({vol_unit})"),
                     hydro_trend,
                     title=(
-                        f"{title} — Hydro Seasonal & Annual Volume Trend "
-                        f"({vol_unit})"
+                        f"{title} — Hydro Seasonal & Annual Volume Trend ({vol_unit})"
                     ),
                     index_label="Season",
                     unit=vol_unit,
