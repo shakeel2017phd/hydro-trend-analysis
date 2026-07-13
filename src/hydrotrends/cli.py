@@ -177,6 +177,7 @@ def _cmd_analyze(args: argparse.Namespace) -> int:
             calendar=args.calendar,
             include_descriptive=not args.no_descriptive,
             alpha=config.alpha,
+            season_schemes=config.season_schemes,
         )
         logger.warning("wrote %s", out)  # always visible (default level)
     return 0

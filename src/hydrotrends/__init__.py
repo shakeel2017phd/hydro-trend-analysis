@@ -28,12 +28,14 @@ except ImportError:  # not built yet (setuptools_scm generates _version.py)
 from .api import (
     ReportColumn,
     analyze_by_period,
+    analyze_hydro_seasonal_volumes,
+    analyze_met_seasonal_volumes,
     analyze_monthly_volumes,
     analyze_preprocessed,
-    analyze_seasonal_volumes,
     analyze_series,
+    describe_hydro_seasonal_volumes,
+    describe_met_seasonal_volumes,
     describe_monthly_volumes,
-    describe_seasonal_volumes,
     generate_report,
 )
 from .core.config import Config, InputSpec, SeasonScheme
@@ -67,9 +69,10 @@ from .data import datasets
 from .data.cleaning import CleaningPolicy, CleaningReport, clean
 from .data.preprocessing import (
     PreprocessedData,
+    hydro_seasonal_volumes,
+    met_seasonal_volumes,
     monthly_volumes,
     preprocess,
-    seasonal_volumes,
 )
 from .data.readers import read_all, read_input
 from .stats.changepoint import (
@@ -111,7 +114,8 @@ __all__ = [
     "preprocess",
     "PreprocessedData",
     "monthly_volumes",
-    "seasonal_volumes",
+    "hydro_seasonal_volumes",
+    "met_seasonal_volumes",
     # configuration
     "Config",
     "InputSpec",
@@ -121,14 +125,16 @@ __all__ = [
     "analyze_by_period",
     "analyze_preprocessed",
     "analyze_monthly_volumes",
-    "analyze_seasonal_volumes",
+    "analyze_hydro_seasonal_volumes",
+    "analyze_met_seasonal_volumes",
     "generate_report",
     "ReportColumn",
     # descriptive
     "describe",
     "describe_by",
     "describe_monthly_volumes",
-    "describe_seasonal_volumes",
+    "describe_hydro_seasonal_volumes",
+    "describe_met_seasonal_volumes",
     "DescriptiveStats",
     # trends
     "mann_kendall",

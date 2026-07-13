@@ -22,16 +22,17 @@ def test_analyze_single_input(tmp_path):
 
 def test_analyze_writes_monthly_and_seasonal_volume_sheets(tmp_path):
     """Every flow unit is paired with its volume unit (UNIT_PAIRS) by default,
-    so a plain run gets the monthly/seasonal/annual volume trend sheets too."""
+    so a plain run gets the monthly/hydro-season/met-season volume trend
+    sheets too (both season schemes are on by default, per Config)."""
     out = tmp_path / "r.xlsx"
     cli.main(
         ["analyze", _daily_csv(), "-o", str(out), "--value-column", "inflow_cusec"]
     )
     sheets = load_workbook(out).sheetnames
-    assert "Monthly Trends (MAF)" in sheets
-    assert "Seasonal Trends (MAF)" in sheets
-    assert "Monthly Trends (BCM)" in sheets
-    assert "Seasonal Trends (BCM)" in sheets
+    for unit in ("MAF", "BCM"):
+        assert f"Monthly Trends ({unit})" in sheets
+        assert f"Hydro Season Trends ({unit})" in sheets
+        assert f"Met Season Trends ({unit})" in sheets
 
 
 def test_no_descriptive(tmp_path):

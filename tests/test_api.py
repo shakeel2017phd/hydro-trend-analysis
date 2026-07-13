@@ -8,6 +8,7 @@ from openpyxl import load_workbook
 
 import hydrotrends as ht
 from hydrotrends.api import analyze_by_period, analyze_series
+from hydrotrends.core.config import SeasonScheme
 from hydrotrends.core.constants import (
     COL_DATE,
     COL_FLOW_CUSECS,
@@ -104,9 +105,9 @@ def test_analyze_monthly_volumes_hydro_month_order_and_trend():
     assert (result["p_value"] < 0.05).all()
 
 
-def test_analyze_seasonal_volumes_order_and_kharif_consistency():
+def test_analyze_hydro_seasonal_volumes_order_and_kharif_consistency():
     pre = _synthetic_hydro_years()
-    result = ht.analyze_seasonal_volumes(pre.hydro, value_col=COL_VOL_MAF)
+    result = ht.analyze_hydro_seasonal_volumes(pre.hydro, value_col=COL_VOL_MAF)
     assert [s.split()[0] for s in result.index] == [
         "Early",
         "Late",
@@ -115,6 +116,23 @@ def test_analyze_seasonal_volumes_order_and_kharif_consistency():
         "Annual",
     ]
     assert (result["n"] == 10).all()
+    assert (result["trend"] == "increasing").all()
+
+
+def test_analyze_met_seasonal_volumes_order_and_trend():
+    pre = _synthetic_hydro_years()
+    result = ht.analyze_met_seasonal_volumes(pre.hydro, value_col=COL_VOL_MAF)
+    assert [s.split()[0] for s in result.index] == [
+        "Winter",
+        "Spring",
+        "Summer",
+        "Monsoon",
+        "Autumn",
+    ]
+    # Interior years have n=10; Winter/Spring can lose an edge year to the
+    # calendar-year-boundary/hydro-year-boundary effects documented on
+    # met_seasonal_volumes, so only require "most years present, trend holds".
+    assert (result["n"] >= 9).all()
     assert (result["trend"] == "increasing").all()
 
 
@@ -132,9 +150,13 @@ def test_describe_monthly_and_seasonal_volumes_agree_with_analyze():
     assert list(desc.index) == list(HYDRO_MONTHS)
     pd.testing.assert_series_equal(desc["mean"], trend["mean"])
 
-    seas_trend = ht.analyze_seasonal_volumes(pre.hydro, value_col=COL_VOL_MAF)
-    seas_desc = ht.describe_seasonal_volumes(pre.hydro, value_col=COL_VOL_MAF)
+    seas_trend = ht.analyze_hydro_seasonal_volumes(pre.hydro, value_col=COL_VOL_MAF)
+    seas_desc = ht.describe_hydro_seasonal_volumes(pre.hydro, value_col=COL_VOL_MAF)
     pd.testing.assert_series_equal(seas_desc["mean"], seas_trend["mean"])
+
+    met_trend = ht.analyze_met_seasonal_volumes(pre.hydro, value_col=COL_VOL_MAF)
+    met_desc = ht.describe_met_seasonal_volumes(pre.hydro, value_col=COL_VOL_MAF)
+    pd.testing.assert_series_equal(met_desc["mean"], met_trend["mean"])
 
 
 def test_generate_report_writes_volume_sheets_when_paired(tmp_path):
@@ -155,9 +177,11 @@ def test_generate_report_writes_volume_sheets_when_paired(tmp_path):
     wb = load_workbook(out)
     for name in (
         "Monthly Trends (MAF)",
-        "Seasonal Trends (MAF)",
         "Monthly Descriptive (MAF)",
-        "Seasonal Descriptive (MAF)",
+        "Hydro Season Trends (MAF)",
+        "Hydro Season Descriptive (MAF)",
+        "Met Season Trends (MAF)",
+        "Met Season Descriptive (MAF)",
     ):
         assert name in wb.sheetnames
     assert wb["Monthly Trends (MAF)"].cell(4, 1).value == "Apr"
@@ -172,5 +196,27 @@ def test_generate_report_omits_volume_sheets_without_pairing(daily_pre, tmp_path
     )
     wb = load_workbook(out)
     assert not any(
-        "Monthly Trends" in s or "Seasonal Trends" in s for s in wb.sheetnames
+        "Monthly Trends" in s or "Season Trends" in s for s in wb.sheetnames
     )
+
+
+def test_generate_report_season_schemes_gating(tmp_path):
+    pre = _synthetic_hydro_years()
+    out = ht.generate_report(
+        pre,
+        tmp_path / "report.xlsx",
+        columns=[
+            ht.ReportColumn(
+                COL_FLOW_CUSECS,
+                "Cusecs",
+                volume_column=COL_VOL_MAF,
+                volume_unit_label="MAF",
+            )
+        ],
+        title="Test Report",
+        season_schemes=(SeasonScheme.CROPPING,),
+    )
+    sheets = load_workbook(out).sheetnames
+    assert "Hydro Season Trends (MAF)" in sheets
+    assert "Met Season Trends (MAF)" not in sheets
+    assert "Monthly Trends (MAF)" in sheets  # not gated by season_schemes

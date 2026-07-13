@@ -99,8 +99,8 @@ def test_monthly_volumes_sorted_by_year_then_calendar_month():
     assert list(monthly[k.COL_MONTH_NUM]) == sorted(monthly[k.COL_MONTH_NUM])
 
 
-def test_seasonal_volumes_kharif_is_early_plus_late(daily_pre):
-    seasonal = ht.seasonal_volumes(daily_pre.hydro)
+def test_hydro_seasonal_volumes_kharif_is_early_plus_late(daily_pre):
+    seasonal = ht.hydro_seasonal_volumes(daily_pre.hydro)
     assert set(seasonal) == {
         "Early_Kharif",
         "Late_Kharif",
@@ -116,11 +116,59 @@ def test_seasonal_volumes_kharif_is_early_plus_late(daily_pre):
     )
 
 
-def test_seasonal_volumes_annual_is_everything(daily_pre):
-    seasonal = ht.seasonal_volumes(daily_pre.hydro)
+def test_hydro_seasonal_volumes_annual_is_everything(daily_pre):
+    seasonal = ht.hydro_seasonal_volumes(daily_pre.hydro)
     whole_year = daily_pre.hydro.groupby(k.COL_HYDRO_YEAR)[k.COL_VOL_MAF].sum()
     pd.testing.assert_series_equal(
         seasonal["Annual"][k.COL_VOL_MAF].sort_index(),
         whole_year.sort_index(),
         check_names=False,
     )
+
+
+def test_met_seasonal_volumes_keys_and_calendar_seasons_match_manual_groupby(
+    daily_pre,
+):
+    met = ht.met_seasonal_volumes(daily_pre.hydro)
+    assert set(met) == {"Winter", "Spring", "Summer", "Monsoon", "Autumn"}
+
+    # Seasons that don't cross the Dec/Jan boundary must match a plain
+    # calendar-year groupby exactly.
+    hydro = daily_pre.hydro
+    for season in ("Spring", "Summer", "Monsoon", "Autumn"):
+        expect = (
+            hydro[hydro[k.COL_MET_SEASON] == season]
+            .groupby(k.COL_YEAR)[k.COL_VOL_MAF]
+            .sum()
+        )
+        pd.testing.assert_series_equal(
+            met[season][k.COL_VOL_MAF].sort_index(),
+            expect.sort_index(),
+            check_names=False,
+            check_index_type=False,
+        )
+
+
+def test_met_seasonal_volumes_winter_rolls_december_into_next_year():
+    # Two consecutive hydro years so a complete Dec(Y0)+Jan(Y0+1)+Feb(Y0+1)
+    # winter triple exists; each month gets a distinct constant flow so the
+    # expected Winter total is unambiguous.
+    frames = []
+    for start_year, flow in ((2000, 100_000.0), (2001, 200_000.0)):
+        dates = pd.date_range(f"{start_year}-04-01", f"{start_year + 1}-03-31")
+        frames.append(pd.DataFrame({k.COL_DATE: dates, k.COL_FLOW_CUSECS: flow}))
+    df = pd.concat(frames, ignore_index=True)
+    pre = ht.preprocess(df, k.TimeResolution.DAILY)
+
+    met = ht.met_seasonal_volumes(pre.hydro)
+    winter = met["Winter"][k.COL_VOL_MAF]
+
+    # Dec 2000 (flow 100_000) + Jan/Feb 2001 (flow 200_000) -> labelled 2001.
+    hydro = pre.hydro
+    dec_2000 = hydro[(hydro[k.COL_YEAR] == 2000) & (hydro[k.COL_MONTH_NUM] == 12)][
+        k.COL_VOL_MAF
+    ].sum()
+    jan_feb_2001 = hydro[
+        (hydro[k.COL_YEAR] == 2001) & (hydro[k.COL_MONTH_NUM].isin([1, 2]))
+    ][k.COL_VOL_MAF].sum()
+    assert math.isclose(winter.loc[2001], dec_2000 + jan_feb_2001)
