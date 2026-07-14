@@ -39,6 +39,25 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Sen's slope + Pettitt break) plots, plus the `compute_lowess` smoothing
   function they depend on — parity-tested against the source in
   `tests/test_plotting.py`.
+- Meteorological-year (`MetYear`, Dec 1 → Nov 30) framing alongside the
+  existing hydrological/calendar-year framings, with matching period/month/
+  dekad orderings (`MET_PERIODS`/`MET_MONTHS`/`MET_DEKADS`) and
+  `PreprocessedData.met`.
+- Raw-value **Data** sheets in `generate_report`: `Daily_Data_{Cal,Hydro,Met}
+  _Year_{unit}`, the 10-Daily-derived equivalents, `Monthly_Data_{unit}`,
+  `Hydro_Season_Data_{unit}`, `Met_Season_Data_{unit}`, and
+  `Annual_Data_{unit}` — one pivot per Cal/Hydro/Met Year framing, each with
+  full row-wise and column-wise descriptive statistics (mirroring the source
+  script's `write_period_data_sheet`/`write_monthly_data_sheet`/
+  `write_seasonal_data_sheet`/`write_annual_data_sheet`, extended to also
+  cover the meteorological-year framing the source script doesn't have).
+
+### Removed
+- The `Descriptive (...)`/`Monthly Descriptive (...)`/`Hydro Season
+  Descriptive (...)`/`Met Season Descriptive (...)` sheets, `generate_report`'s
+  `include_descriptive` parameter, and the CLI's `--no-descriptive` flag —
+  superseded by the new Data sheets above, which carry the same descriptive
+  statistics plus the raw values they're computed from.
 
 ### Fixed
 - `analyze_preprocessed`'s daily/10-daily per-period tables now sort by and

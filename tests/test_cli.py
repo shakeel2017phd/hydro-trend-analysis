@@ -89,23 +89,6 @@ def test_analyze_writes_monthly_and_seasonal_volume_sheets(tmp_path):
     assert "Met_Season_Trends_BCM" in bcm_sheets
 
 
-def test_no_descriptive(tmp_path):
-    out = tmp_path / "r.xlsx"
-    cli.main(
-        [
-            "analyze",
-            _daily_csv(),
-            "-o",
-            str(out),
-            "--value-column",
-            "inflow_cusec",
-            "--no-descriptive",
-        ]
-    )
-    for path in (tmp_path / "r_Cusecs_MAF.xlsx", tmp_path / "r_Cumecs_BCM.xlsx"):
-        assert not any("Descriptive" in s for s in load_workbook(path).sheetnames)
-
-
 def test_10daily_compact(tmp_path):
     out = tmp_path / "t.xlsx"
     rc = cli.main(

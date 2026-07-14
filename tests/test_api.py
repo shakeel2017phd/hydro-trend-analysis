@@ -284,17 +284,15 @@ def test_generate_report_writes_volume_sheets_when_paired(tmp_path):
     wb = load_workbook(out)
     for name in (
         "Monthly_Trends_MAF",
-        "Monthly Descriptive (MAF)",
         "Monthly_Data_MAF",
         "Hydro_Season_Trends_MAF",
-        "Hydro Season Descriptive (MAF)",
         "Hydro_Season_Data_MAF",
         "Annual_Data_MAF",
         "Met_Season_Trends_MAF",
-        "Met Season Descriptive (MAF)",
         "Met_Season_Data_MAF",
     ):
         assert name in wb.sheetnames, name
+    assert not any("Descriptive" in s for s in wb.sheetnames)
     assert wb["Monthly_Trends_MAF"].cell(4, 1).value == "Apr"
 
     hs = wb["Hydro_Season_Data_MAF"]

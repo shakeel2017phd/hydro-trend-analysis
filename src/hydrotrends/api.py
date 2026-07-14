@@ -83,7 +83,6 @@ from .stats.trends import (
 from .viz.reports import (
     write_annual_data_sheet,
     write_cover_sheet,
-    write_descriptive_sheet,
     write_monthly_data_sheet,
     write_period_data_sheet,
     write_results_sheet,
@@ -782,7 +781,6 @@ def generate_report(
     title: str = "Hydrological Trend Analysis",
     subtitle: str = "",
     calendar: bool = False,
-    include_descriptive: bool = True,
     alpha: float = DEFAULT_ALPHA,
     season_schemes: Sequence[SeasonScheme] = (
         SeasonScheme.CROPPING,
@@ -791,25 +789,25 @@ def generate_report(
 ) -> Path:
     """Build a complete .xlsx report from a preprocessed input.
 
-    Writes a cover sheet, then for each column a trend-analysis sheet (and, when
-    ``include_descriptive`` is set, a descriptive-statistics sheet). Periods are
-    ordered by the resolution's hydrological (or calendar) sequence. When a
-    column is volume-paired (see :class:`ReportColumn`), monthly volume trend
-    sheets are always added, plus cropping-season (``Early_Kharif``/
-    ``Late_Kharif``/``Kharif``/``Rabi``/``Annual``) and/or meteorological-season
-    (``Winter``/``Spring``/``Summer``/``Monsoon``/``Autumn``) trend sheets
-    depending on which schemes ``season_schemes`` selects — both by default,
-    matching :attr:`~hydrotrends.core.config.Config.season_schemes`. Returns
-    the output path.
+    Writes a cover sheet, then for each column a trend-analysis sheet plus its
+    raw-value Data sheets (Cal/Hydro/Met Year framings, with full row/column
+    descriptive statistics -- see
+    :func:`~hydrotrends.viz.reports.write_period_data_sheet`). Periods are
+    ordered by the resolution's hydrological (or calendar) sequence.
+    When a column is volume-paired (see :class:`ReportColumn`), monthly volume
+    trend and Data sheets are always added, plus cropping-season
+    (``Early_Kharif``/``Late_Kharif``/``Kharif``/``Rabi``/``Annual``) and/or
+    meteorological-season (``Winter``/``Spring``/``Summer``/``Monsoon``/
+    ``Autumn``) trend and Data sheets depending on which schemes
+    ``season_schemes`` selects — both by default, matching
+    :attr:`~hydrotrends.core.config.Config.season_schemes`. Returns the output
+    path.
     """
     if not columns:
         raise ValueError("generate_report needs at least one ReportColumn")
     include_cropping = SeasonScheme.CROPPING in season_schemes
     include_meteorological = SeasonScheme.METEOROLOGICAL in season_schemes
 
-    frame = pre.calendar if calendar else pre.hydro
-    info = RESOLUTION_INFO[pre.resolution]
-    order = list(info.cal_periods if calendar else info.hydro_periods)
     is_daily = pre.resolution is TimeResolution.DAILY
     primary_label = "Daily" if is_daily else "10Daily"
     primary_desc = "Daily Inflow" if is_daily else "10-Daily Mean Inflow"
@@ -871,18 +869,6 @@ def generate_report(
                 abbreviate_sheet_key=True,
             )
 
-        if include_descriptive:
-            desc = _reindex_to_order(
-                describe_by(frame, value_col=rc.column, by=COL_PERIOD), order
-            )
-            write_descriptive_sheet(
-                wb.create_sheet(f"Descriptive ({rc.unit_label})"),
-                desc,
-                title=f"Descriptive Statistics — {rc.unit_label}",
-                index_label="Period",
-                unit=rc.unit_label,
-            )
-
         if rc.volume_column is not None:
             vol_unit = rc.volume_unit_label or ""
             _write_period_data_sheets(
@@ -917,14 +903,6 @@ def generate_report(
             _write_monthly_data_sheet(
                 wb, pre, value_col=rc.volume_column, unit_label=vol_unit, title=title
             )
-            if include_descriptive:
-                write_descriptive_sheet(
-                    wb.create_sheet(f"Monthly Descriptive ({vol_unit})"),
-                    describe_monthly_volumes(pre.hydro, value_col=rc.volume_column),
-                    title=f"Descriptive Statistics — Monthly Volume ({vol_unit})",
-                    index_label="Month",
-                    unit=vol_unit,
-                )
 
             if include_cropping:
                 hydro_trend = analyze_hydro_seasonal_volumes(
@@ -954,19 +932,6 @@ def generate_report(
                     unit_label=vol_unit,
                     title=title,
                 )
-                if include_descriptive:
-                    write_descriptive_sheet(
-                        wb.create_sheet(f"Hydro Season Descriptive ({vol_unit})"),
-                        describe_hydro_seasonal_volumes(
-                            pre.hydro, value_col=rc.volume_column
-                        ),
-                        title=(
-                            f"Descriptive Statistics — Hydro Seasonal & Annual "
-                            f"Volume ({vol_unit})"
-                        ),
-                        index_label="Season",
-                        unit=vol_unit,
-                    )
 
             if include_meteorological:
                 met_trend = analyze_met_seasonal_volumes(
@@ -989,19 +954,6 @@ def generate_report(
                     unit_label=vol_unit,
                     title=title,
                 )
-                if include_descriptive:
-                    write_descriptive_sheet(
-                        wb.create_sheet(f"Met Season Descriptive ({vol_unit})"),
-                        describe_met_seasonal_volumes(
-                            pre.hydro, value_col=rc.volume_column
-                        ),
-                        title=(
-                            f"Descriptive Statistics — Meteorological Season "
-                            f"Volume ({vol_unit})"
-                        ),
-                        index_label="Met Season",
-                        unit=vol_unit,
-                    )
 
     wb.remove(default)
     out = Path(output_path)

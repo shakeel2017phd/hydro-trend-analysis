@@ -99,11 +99,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="significance level for the trend tests",
     )
     a.add_argument("--no-clean", action="store_true", help="skip the cleaning step")
-    a.add_argument(
-        "--no-descriptive",
-        action="store_true",
-        help="omit the descriptive-statistics sheets",
-    )
     a.add_argument("--config", help="YAML config file (overrides the input flags)")
     a.add_argument(
         "-v",
@@ -207,7 +202,6 @@ def _cmd_analyze(args: argparse.Namespace) -> int:
                 title=f"{spec.path.stem} — Trend Analysis ({rc.unit_label})",
                 subtitle=_SUBTITLE,
                 calendar=args.calendar,
-                include_descriptive=not args.no_descriptive,
                 alpha=config.alpha,
                 season_schemes=config.season_schemes,
             )

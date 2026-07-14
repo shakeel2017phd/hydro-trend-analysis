@@ -39,7 +39,6 @@ __all__ = [
     "STAT_GROUPS",
     "ResultSheet",
     "write_results_sheet",
-    "write_descriptive_sheet",
     "write_period_data_sheet",
     "write_monthly_data_sheet",
     "write_seasonal_data_sheet",
@@ -414,9 +413,11 @@ def write_workbook(path: str | Path, sheets: Sequence[ResultSheet]) -> Path:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Descriptive-statistics sheet
+# Descriptive-statistics field/header schema
 # ─────────────────────────────────────────────────────────────────────────────
-# Field name (as produced by stats.descriptive.describe_by) -> column header.
+# Field name (as produced by stats.descriptive.describe/describe_by) -> column
+# header. Backs the 15-stat row/column blocks in the Data pivot sheets below
+# (via _hstat_row) -- "n" is dropped there since HSTAT_LABELS has no N field.
 _DESCRIPTIVE_COLUMNS: tuple[tuple[str, str], ...] = (
     ("n", "N"),
     ("mean", "Mean"),
@@ -451,42 +452,6 @@ def _descriptive_fmt(field: str, value: Any, unit: str) -> tuple[Any, str | None
     return round(v, 2), "0.00"
 
 
-def write_descriptive_sheet(
-    ws: Worksheet,
-    stats: pd.DataFrame,
-    *,
-    title: str,
-    index_label: str = "Period",
-    unit: str = "",
-    columns: tuple[tuple[str, str], ...] = _DESCRIPTIVE_COLUMNS,
-) -> None:
-    """Write a per-period descriptive-statistics table.
-
-    ``stats`` is a frame indexed by period with the fields produced by
-    :func:`hydrotrends.stats.descriptive.describe_by`.
-    """
-    ws.sheet_view.showGridLines = False
-    total_cols = 1 + len(columns)
-    _merged_header(ws, 1, 1, total_cols, title, bg=_HDR, size=12)
-
-    _header(ws, 2, 1, f"{index_label}  [{unit}]", bg=_SUB, size=9)
-    for j, (_field, header) in enumerate(columns, start=2):
-        _header(ws, 2, j, header, bg=_SUB, size=9)
-
-    for i, (idx, row) in enumerate(stats.iterrows()):
-        r = 3 + i
-        row_bg = _ALT if i % 2 == 0 else _WHT
-        _cell(ws, r, 1, str(idx), bg=row_bg, bold=True, align="left")
-        for j, (field, _header_text) in enumerate(columns, start=2):
-            v, fmt = _descriptive_fmt(field, row.get(field, math.nan), unit)
-            _cell(ws, r, j, v, bg=row_bg, number_format=fmt)
-
-    ws.freeze_panes = "B3"
-    widths = [15.0] + [10.0] * len(columns)
-    for i, width in enumerate(widths, 1):
-        ws.column_dimensions[get_column_letter(i)].width = width
-
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Data-value pivot sheets (raw values + row/column descriptive statistics)
 # ─────────────────────────────────────────────────────────────────────────────
@@ -508,9 +473,8 @@ def _value_fmt(value: Any, unit: str) -> tuple[Any, str | None]:
 def _hstat_row(values: Sequence[float], unit: str) -> list[tuple[Any, str | None]]:
     """15 (value, number_format) pairs — the data-sheet stats row/column.
 
-    Computed by :func:`~hydrotrends.stats.descriptive.describe`, the same
-    function backing :func:`write_descriptive_sheet`, so the data sheets and
-    the descriptive sheets can never numerically disagree.
+    Computed by :func:`~hydrotrends.stats.descriptive.describe`, the package's
+    one shared descriptive-statistics implementation.
     """
     data = describe(values).to_dict()
     return [
@@ -864,8 +828,9 @@ DEFAULT_COVER_ROWS: tuple[CoverRow, ...] = (
         "(Winter/Spring/Summer/Monsoon/Autumn, Annual Dec\u2013Nov)",
     ),
     CoverRow(
-        "*_Descriptive_* sheets",
-        "Per-period/month/season descriptive statistics only (no trend tests)",
+        "*_Data_...",
+        "Raw values by Cal/Hydro/Met Year, with full row & column descriptive "
+        "statistics (no trend tests)",
     ),
     CoverRow(""),
     CoverRow("ABBREVIATIONS", is_section=True),
