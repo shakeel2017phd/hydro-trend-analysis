@@ -9,6 +9,8 @@ What it adds
 ------------
 * Calendar parts: ``Year``, ``MonthNum``, ``Month``, ``Day``, ``Dekad``.
 * ``HydroYear`` — water year (Jan-Mar belong to the previous year).
+* ``MetYear`` — meteorological year (Dec belongs to the *following* year, so
+  Dec(Y)+Jan(Y+1)+Feb(Y+1) fall in the same MetYear, Y+1).
 * ``Period`` — the ordered category key, **resolution-dependent**: a day label
   (``"Apr-01"``) for daily input, a dekad label (``"Apr1"``) for 10-daily.
 * ``NDays`` — days the row represents: ``1`` for daily, the dekad's length
@@ -18,11 +20,12 @@ What it adds
 * **Both** season columns: ``Season`` (Kharif/Rabi, with the day-level June-10
   split) and ``MetSeason`` (calendar meteorological seasons via ``MET_SEASONS``).
 
-It then splits into two quality-filtered frames — one keyed on complete
-hydrological years, one on complete calendar years — dropping (and logging) any
-partial years at the start/end of the record, resolution-aware: a year is
-complete when its earliest row is the first sub-period of the start month
-(day 1 for daily, dekad 1 for 10-daily).
+It then splits into three quality-filtered frames — one keyed on complete
+hydrological years, one on complete calendar years, one on complete
+meteorological years — dropping (and logging) any partial years at the
+start/end of the record, resolution-aware: a year is complete when its
+earliest row is the first sub-period of the start month (day 1 for daily,
+dekad 1 for 10-daily; December for meteorological years).
 """
 
 from __future__ import annotations
@@ -42,6 +45,7 @@ from ..core.constants import (
     COL_FLOW_CUSECS,
     COL_HYDRO_YEAR,
     COL_MET_SEASON,
+    COL_MET_YEAR,
     COL_MONTH,
     COL_MONTH_NUM,
     COL_N_DAYS,
@@ -126,6 +130,7 @@ class PreprocessedData:
     resolution: TimeResolution
     hydro: pd.DataFrame  # rows within complete hydrological years
     calendar: pd.DataFrame  # rows within complete calendar years
+    met: pd.DataFrame  # rows within complete meteorological years (Dec-Nov)
 
 
 def _cropping_season(df: pd.DataFrame) -> np.ndarray:
@@ -160,6 +165,9 @@ def enrich(df: pd.DataFrame, resolution: TimeResolution) -> pd.DataFrame:
     )
     out[COL_HYDRO_YEAR] = np.where(
         out[COL_MONTH_NUM].isin([1, 2, 3]), out[COL_YEAR] - 1, out[COL_YEAR]
+    )
+    out[COL_MET_YEAR] = np.where(
+        out[COL_MONTH_NUM] == _DECEMBER, out[COL_YEAR] + 1, out[COL_YEAR]
     )
 
     if resolution is TimeResolution.DAILY:
@@ -222,7 +230,7 @@ def _filter_complete_years(
 
 
 def preprocess(df: pd.DataFrame, resolution: TimeResolution) -> PreprocessedData:
-    """Enrich a canonical frame and split it into complete hydro/calendar years."""
+    """Enrich a canonical frame and split it into complete hydro/calendar/met years."""
     enriched = enrich(df, resolution)
     hydro = _filter_complete_years(
         enriched,
@@ -238,13 +246,23 @@ def preprocess(df: pd.DataFrame, resolution: TimeResolution) -> PreprocessedData
         resolution=resolution,
         kind="calendar",
     )
+    met = _filter_complete_years(
+        enriched,
+        period_col=COL_MET_YEAR,
+        start_month=_DECEMBER,
+        resolution=resolution,
+        kind="met",
+    )
     logger.info(
-        "preprocessed %s: %d hydro-year rows, %d calendar-year rows",
+        "preprocessed %s: %d hydro-year rows, %d calendar-year rows, %d met-year rows",
         resolution.value,
         len(hydro),
         len(calendar),
+        len(met),
     )
-    return PreprocessedData(resolution=resolution, hydro=hydro, calendar=calendar)
+    return PreprocessedData(
+        resolution=resolution, hydro=hydro, calendar=calendar, met=met
+    )
 
 
 def preprocess_all(
@@ -346,15 +364,11 @@ def met_seasonal_volumes(hydro: pd.DataFrame) -> dict[str, pd.DataFrame]:
     first/last occurrence in the record can be partial if either neighbouring
     hydro year was dropped as incomplete.
     """
-    met_year = np.where(
-        hydro[COL_MONTH_NUM] == _DECEMBER, hydro[COL_YEAR] + 1, hydro[COL_YEAR]
-    )
-    working = hydro.assign(_MetYear=met_year)
     result = {
-        season: working[working[COL_MET_SEASON] == season]
-        .groupby("_MetYear")[[COL_VOL_MAF, COL_VOL_BCM]]
+        season: hydro[hydro[COL_MET_SEASON] == season]
+        .groupby(COL_MET_YEAR)[[COL_VOL_MAF, COL_VOL_BCM]]
         .sum()
         for season in _MET_SEASON_ORDER
     }
-    result["Annual"] = working.groupby("_MetYear")[[COL_VOL_MAF, COL_VOL_BCM]].sum()
+    result["Annual"] = hydro.groupby(COL_MET_YEAR)[[COL_VOL_MAF, COL_VOL_BCM]].sum()
     return result

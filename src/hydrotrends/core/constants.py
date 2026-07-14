@@ -58,6 +58,7 @@ __all__ = [
     "COL_FLOW_CUMECS",
     "COL_YEAR",
     "COL_HYDRO_YEAR",
+    "COL_MET_YEAR",
     "COL_MONTH_NUM",
     "COL_MONTH",
     "COL_DAY",
@@ -375,6 +376,7 @@ COL_FLOW_CUSECS: Final = "Inflow_Cusecs"
 COL_FLOW_CUMECS: Final = "Inflow_Cumecs"
 COL_YEAR: Final = "Year"
 COL_HYDRO_YEAR: Final = "HydroYear"
+COL_MET_YEAR: Final = "MetYear"  # meteorological year (Dec 1 -> Nov 30)
 COL_MONTH_NUM: Final = "MonthNum"
 COL_MONTH: Final = "Month"
 COL_DAY: Final = "Day"

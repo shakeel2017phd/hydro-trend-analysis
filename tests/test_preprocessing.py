@@ -47,6 +47,30 @@ def test_incomplete_year_dropped():
     assert set(pre.hydro[k.COL_HYDRO_YEAR].unique()) == {2000}
 
 
+def test_met_year_column():
+    pre = ht.preprocess(_daily_year(), k.TimeResolution.DAILY)
+    h = pre.hydro.set_index(k.COL_DATE)
+    # Dec 2000 and Jan/Feb 2001 all roll to the same MetYear (2001).
+    assert h.loc["2000-12-15", k.COL_MET_YEAR] == 2001
+    assert h.loc["2001-01-15", k.COL_MET_YEAR] == 2001
+    assert h.loc["2001-02-15", k.COL_MET_YEAR] == 2001
+    # Any other month keeps the plain calendar year.
+    assert h.loc["2000-07-15", k.COL_MET_YEAR] == 2000
+
+
+def test_met_frame_drops_incomplete_met_years():
+    # Two full hydro years (2000, 2001) give a complete Dec(2000)+Jan/Feb(2001)
+    # -> MetYear 2001, and a complete Dec(2001)+Jan/Feb(2002) -> MetYear 2002,
+    # but MetYear 2000 (needing Dec 1999, absent) and the trailing partial
+    # MetYear (needing a full Mar-Nov 2002, absent) are both incomplete.
+    frames = [_daily_year(f"{y}-04-01", f"{y + 1}-03-31") for y in (2000, 2001)]
+    pre = ht.preprocess(pd.concat(frames, ignore_index=True), k.TimeResolution.DAILY)
+    assert set(pre.met[k.COL_MET_YEAR].unique()) == {2001, 2002}
+    # Every kept met-year's earliest row is Dec 1.
+    starts = pre.met.groupby(k.COL_MET_YEAR)[k.COL_DATE].min()
+    assert (starts.dt.month == 12).all() and (starts.dt.day == 1).all()
+
+
 def test_tendaily_ndays_leap_aware():
     # dekad-end dates for one hydro year
     rows = []
