@@ -90,6 +90,22 @@ def test_write_period_data_sheet_layout_and_stats():
     assert ws.cell(row=bottom + len(_STAT_HEADERS) - 1, column=1).value == "Sum"
 
 
+def test_write_period_data_sheet_label_fn():
+    wb, ws = _sheet()
+    pivot = pd.DataFrame({"Apr-01": [10.0]}, index=[2000])
+    write_period_data_sheet(
+        ws,
+        pivot,
+        title="t",
+        period_order=["Apr-01"],
+        month_order=["Apr"],
+        row_label="Hydro Year",
+        unit="Cusecs",
+        label_fn=hydro_year_label,
+    )
+    assert ws["A4"].value == "2000-01"
+
+
 def test_write_monthly_data_sheet():
     wb, ws = _sheet()
     years = [2000, 2001]
@@ -97,10 +113,13 @@ def test_write_monthly_data_sheet():
     pivot = pd.DataFrame(
         {"Apr": [1.0, 2.0], "May": [3.0, 4.0], "Jun": [5.0, 6.0]}, index=years
     )
-    write_monthly_data_sheet(ws, pivot, title="Monthly test", month_order=months)
+    write_monthly_data_sheet(
+        ws, pivot, title="Monthly test", month_order=months, label_fn=hydro_year_label
+    )
     assert ws["A1"].value == "Monthly test"
     assert ws["A2"].value == "Hydro Year"
     assert ws["A3"].value == "(YYYY-YY)"
+    assert ws["A4"].value == "2000-01"
     assert ws.cell(row=4, column=2).value == 1.0
     bottom = 4 + len(years)
     assert ws.cell(row=bottom, column=1).value == "Mean"

@@ -139,6 +139,68 @@ def test_generate_report_end_to_end(daily_pre, tmp_path):
     assert ws.cell(4, 1).value == "Apr-01"  # hydro order
 
 
+def test_generate_report_writes_daily_and_10daily_data_sheets(daily_pre, tmp_path):
+    out = ht.generate_report(
+        daily_pre,
+        tmp_path / "report.xlsx",
+        columns=[
+            ht.ReportColumn(
+                COL_FLOW_CUSECS,
+                "Cusecs",
+                volume_column=COL_VOL_MAF,
+                volume_unit_label="MAF",
+            )
+        ],
+        title="Test Report",
+    )
+    wb = load_workbook(out)
+    for name in (
+        "Daily_Data_Cal_Year_Cusecs",
+        "Daily_Data_Hydro_Year_Cusecs",
+        "Daily_Data_Met_Year_Cusecs",
+        "Daily_Data_Cal_Year_MAF",
+        "Daily_Data_Hydro_Year_MAF",
+        "Daily_Data_Met_Year_MAF",
+        # abbreviated Cal/Hydro/Met Year key: the full form would push these 3
+        # past Excel's 31-char sheet-name limit (e.g. "..._Hydro_Year_Cusecs" = 35).
+        "10Daily_Mean_Data_CY_Cusecs",
+        "10Daily_Mean_Data_HY_Cusecs",
+        "10Daily_Mean_Data_MY_Cusecs",
+        "10Daily_Data_Cal_Year_MAF",
+        "10Daily_Data_Hydro_Year_MAF",
+        "10Daily_Data_Met_Year_MAF",
+    ):
+        assert name in wb.sheetnames, name
+    assert all(len(name) <= 31 for name in wb.sheetnames)
+
+    cal = wb["Daily_Data_Cal_Year_Cusecs"]
+    assert cal.cell(2, 1).value == "Year"
+    assert cal.cell(4, 1).value.isdigit()  # plain calendar year, no "-YY" suffix
+
+    hydro = wb["Daily_Data_Hydro_Year_Cusecs"]
+    assert hydro.cell(2, 1).value == "Hydro Year"
+    assert "-" in hydro.cell(4, 1).value  # "YYYY-YY" label
+
+    met = wb["Daily_Data_Met_Year_Cusecs"]
+    assert met.cell(2, 1).value == "Met Year"
+    assert "-" in met.cell(4, 1).value
+
+
+def test_generate_report_10daily_input_has_no_daily_data_sheets(tendaily_pre, tmp_path):
+    out = ht.generate_report(
+        tendaily_pre,
+        tmp_path / "report.xlsx",
+        columns=[ht.ReportColumn(COL_FLOW_CUSECS, "Cusecs")],
+        title="Test Report",
+    )
+    wb = load_workbook(out)
+    assert not any(name.startswith("Daily_Data_") for name in wb.sheetnames)
+    # abbreviated Cal/Hydro/Met Year key: "10Daily_Mean_Data_Hydro_Year_Cusecs"
+    # would be 35 chars, over Excel's 31-char sheet-name limit.
+    assert "10Daily_Mean_Data_HY_Cusecs" in wb.sheetnames
+    assert all(len(name) <= 31 for name in wb.sheetnames)
+
+
 # ── monthly / seasonal volume aggregation + trend analysis ──────────────────
 def test_analyze_monthly_volumes_hydro_month_order_and_trend():
     pre = _synthetic_hydro_years()
@@ -240,9 +302,7 @@ def test_generate_report_omits_volume_sheets_without_pairing(daily_pre, tmp_path
         title="Test Report",
     )
     wb = load_workbook(out)
-    assert not any(
-        "Monthly_Trends" in s or "Season_Trends" in s for s in wb.sheetnames
-    )
+    assert not any("Monthly_Trends" in s or "Season_Trends" in s for s in wb.sheetnames)
 
 
 def test_generate_report_season_schemes_gating(tmp_path):

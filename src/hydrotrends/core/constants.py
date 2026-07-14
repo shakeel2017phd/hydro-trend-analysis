@@ -40,12 +40,15 @@ __all__ = [
     "DEKAD_UPPER_DAYS",
     "HYDRO_MONTHS",
     "CAL_MONTHS",
+    "MET_MONTHS",
     "FULL_MONTHS",
     "MONTH_ABBR_TO_NUM",
     "HYDRO_PERIODS",
     "CAL_PERIODS",
+    "MET_PERIODS",
     "HYDRO_DEKADS",
     "CAL_DEKADS",
+    "MET_DEKADS",
     "TimeResolution",
     "OnIssue",
     "TrendDirection",
@@ -228,6 +231,21 @@ CAL_MONTHS: Final[tuple[str, ...]] = (
     "Nov",
     "Dec",
 )
+# Meteorological year: Dec 1 -> Nov 30 (see COL_MET_YEAR).
+MET_MONTHS: Final[tuple[str, ...]] = (
+    "Dec",
+    "Jan",
+    "Feb",
+    "Mar",
+    "Apr",
+    "May",
+    "Jun",
+    "Jul",
+    "Aug",
+    "Sep",
+    "Oct",
+    "Nov",
+)
 FULL_MONTHS: Final[Mapping[str, str]] = MappingProxyType(
     {
         "Jan": "January",
@@ -258,6 +276,7 @@ MONTH_ABBR_TO_NUM: Final[Mapping[str, int]] = MappingProxyType(
 # so 29 February ("Feb-29") is present and leap-year data orders correctly.
 _HYDRO_MONTH_NUMS: Final[tuple[int, ...]] = (4, 5, 6, 7, 8, 9, 10, 11, 12, 1, 2, 3)
 _CAL_MONTH_NUMS: Final[tuple[int, ...]] = tuple(range(1, 13))
+_MET_MONTH_NUMS: Final[tuple[int, ...]] = (12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11)
 _LEAP_REF_YEAR: Final = 2020  # any leap year; only used for per-month day counts
 
 
@@ -273,6 +292,7 @@ def _period_labels(month_numbers: tuple[int, ...]) -> tuple[str, ...]:
 
 HYDRO_PERIODS: Final[tuple[str, ...]] = _period_labels(_HYDRO_MONTH_NUMS)
 CAL_PERIODS: Final[tuple[str, ...]] = _period_labels(_CAL_MONTH_NUMS)
+MET_PERIODS: Final[tuple[str, ...]] = _period_labels(_MET_MONTH_NUMS)
 
 # Dekad labels: month abbr + dekad number, e.g. "Apr1", "Apr2", "Apr3".
 HYDRO_DEKADS: Final[tuple[str, ...]] = tuple(
@@ -280,6 +300,9 @@ HYDRO_DEKADS: Final[tuple[str, ...]] = tuple(
 )
 CAL_DEKADS: Final[tuple[str, ...]] = tuple(
     f"{m}{d}" for m in CAL_MONTHS for d in (1, 2, 3)
+)
+MET_DEKADS: Final[tuple[str, ...]] = tuple(
+    f"{m}{d}" for m in MET_MONTHS for d in (1, 2, 3)
 )
 
 
@@ -342,6 +365,7 @@ class ResolutionInfo(NamedTuple):
     scale: TimeScale
     hydro_periods: tuple[str, ...]
     cal_periods: tuple[str, ...]
+    met_periods: tuple[str, ...]
     n_period_labels: int  # size of the ordered category (366 daily / 36 dekad)
     is_pre_aggregated: bool  # True for 10-daily (values are dekad averages)
 
@@ -352,6 +376,7 @@ RESOLUTION_INFO: Final[Mapping[TimeResolution, ResolutionInfo]] = MappingProxyTy
             scale=TimeScale.DAILY,
             hydro_periods=HYDRO_PERIODS,
             cal_periods=CAL_PERIODS,
+            met_periods=MET_PERIODS,
             n_period_labels=len(CAL_PERIODS),
             is_pre_aggregated=False,
         ),
@@ -359,6 +384,7 @@ RESOLUTION_INFO: Final[Mapping[TimeResolution, ResolutionInfo]] = MappingProxyTy
             scale=TimeScale.TEN_DAILY,
             hydro_periods=HYDRO_DEKADS,
             cal_periods=CAL_DEKADS,
+            met_periods=MET_DEKADS,
             n_period_labels=len(CAL_DEKADS),
             is_pre_aggregated=True,
         ),

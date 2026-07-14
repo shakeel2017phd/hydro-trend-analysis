@@ -272,21 +272,33 @@ def preprocess_all(
     return [(spec, preprocess(df, spec.resolution)) for spec, df in loaded]
 
 
-def dekads_from_daily(daily_hydro: pd.DataFrame) -> pd.DataFrame:
-    """Aggregate a daily hydro frame into per-dekad rows.
+def dekads_from_daily(daily: pd.DataFrame) -> pd.DataFrame:
+    """Aggregate a daily frame into per-dekad rows.
 
     Mirrors the source script's ``dekadal_hy`` exactly: groups by
-    ``(Year, HydroYear, Month, MonthNum, Dekad)``, averaging
+    ``(Year, HydroYear, MetYear, Month, MonthNum, Dekad)``, averaging
     ``Inflow_Cusecs``/``Inflow_Cumecs`` and summing ``Vol_MAF``/``Vol_BCM``.
     The result carries a ``Period`` column in the same ``"{Month}{Dekad}"``
     format (e.g. ``"Apr1"``) as a *native* 10-daily input's own ``Period``
     column, so it can be fed into :func:`~hydrotrends.api.analyze_by_period`
     exactly like one — this is what lets a daily-only record produce a
     10-daily trend table without a separate 10-daily source file.
+
+    ``Year``/``HydroYear``/``MetYear`` are all carried through regardless of
+    which of the three complete-year frames (:attr:`PreprocessedData.hydro`,
+    ``.calendar``, or ``.met``) is passed in, so the caller picks whichever
+    year column matches the framing it needs from the one result.
     """
     grouped = (
-        daily_hydro.groupby(
-            [COL_YEAR, COL_HYDRO_YEAR, COL_MONTH, COL_MONTH_NUM, COL_DEKAD]
+        daily.groupby(
+            [
+                COL_YEAR,
+                COL_HYDRO_YEAR,
+                COL_MET_YEAR,
+                COL_MONTH,
+                COL_MONTH_NUM,
+                COL_DEKAD,
+            ]
         )
         .agg(
             **{

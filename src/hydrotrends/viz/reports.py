@@ -527,6 +527,7 @@ def write_period_data_sheet(
     month_order: Sequence[str],
     row_label: str,
     unit: str,
+    label_fn: Callable[[Any], str] | None = None,
 ) -> None:
     """Write a Daily/10-Daily raw-value pivot.
 
@@ -570,7 +571,8 @@ def write_period_data_sheet(
     for i, (idx, row) in enumerate(pivot.iterrows()):
         r = 4 + i
         row_bg = _ALT if i % 2 == 0 else _WHT
-        _cell(ws, r, 1, str(idx), bg=row_bg, bold=True, align="left")
+        label = label_fn(idx) if label_fn else str(idx)
+        _cell(ws, r, 1, label, bg=row_bg, bold=True, align="left")
         values: list[float] = []
         for j, period in enumerate(period_order, start=2):
             v = row.get(period, math.nan)
@@ -620,6 +622,7 @@ def write_monthly_data_sheet(
     month_order: Sequence[str],
     row_label: str = "Hydro Year",
     unit: str = "MAF",
+    label_fn: Callable[[Any], str] | None = None,
 ) -> None:
     """Write a Monthly volume pivot: one row per year, one column per month,
     plus row & column descriptive statistics.
@@ -651,7 +654,8 @@ def write_monthly_data_sheet(
     for i, (idx, row) in enumerate(pivot.iterrows()):
         r = 4 + i
         row_bg = _ALT if i % 2 == 0 else _WHT
-        _cell(ws, r, 1, str(idx), bg=row_bg, bold=True, align="left")
+        label = label_fn(idx) if label_fn else str(idx)
+        _cell(ws, r, 1, label, bg=row_bg, bold=True, align="left")
         values: list[float] = []
         for j, month in enumerate(month_order, start=2):
             v = row.get(month, math.nan)

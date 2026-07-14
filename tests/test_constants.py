@@ -51,6 +51,13 @@ def test_period_labels_include_leap_day():
     assert len(c.HYDRO_DEKADS) == 36 and c.HYDRO_DEKADS[0] == "Apr1"
 
 
+def test_met_periods_start_december():
+    assert c.MET_MONTHS[0] == "Dec" and c.MET_MONTHS[-1] == "Nov"
+    assert c.MET_PERIODS[0] == "Dec-01" and "Feb-29" in c.MET_PERIODS
+    assert len(c.MET_DEKADS) == 36 and c.MET_DEKADS[0] == "Dec1"
+    assert set(c.MET_MONTHS) == set(c.HYDRO_MONTHS) == set(c.CAL_MONTHS)
+
+
 def test_strenum_string_equality():
     assert ht.TrendDirection.INCREASING == "increasing"
     assert ht.FlowUnit.CUSECS == "Cusecs"

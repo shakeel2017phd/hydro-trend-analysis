@@ -25,7 +25,7 @@ Design notes
 from __future__ import annotations
 
 import math
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -36,17 +36,27 @@ from openpyxl import Workbook
 
 from .core.config import SeasonScheme
 from .core.constants import (
+    CAL_DEKADS,
+    CAL_MONTHS,
     COL_HYDRO_YEAR,
+    COL_MET_YEAR,
     COL_PERIOD,
     COL_YEAR,
     DEFAULT_ALPHA,
     HYDRO_DEKADS,
     HYDRO_MONTHS,
+    MET_DEKADS,
+    MET_MONTHS,
     MOVING_AVERAGE_WINDOW,
     RESOLUTION_INFO,
     TimeResolution,
 )
-from .core.utils import significance_stars, to_float_array
+from .core.utils import (
+    hydro_year_label,
+    met_year_label,
+    significance_stars,
+    to_float_array,
+)
 from .data.preprocessing import (
     PreprocessedData,
     dekads_from_daily,
@@ -69,7 +79,12 @@ from .stats.trends import (
     percent_slope,
     sens_slope,
 )
-from .viz.reports import write_cover_sheet, write_descriptive_sheet, write_results_sheet
+from .viz.reports import (
+    write_cover_sheet,
+    write_descriptive_sheet,
+    write_period_data_sheet,
+    write_results_sheet,
+)
 
 __all__ = [
     "analyze_series",
@@ -484,6 +499,138 @@ def describe_met_seasonal_volumes(
 
 
 @dataclass(frozen=True)
+class _YearFraming:
+    """One Cal/Hydro/Met Year framing of a Daily or 10-Daily raw-value pivot."""
+
+    key: str  # "Cal_Year" / "Hydro_Year" / "Met_Year" -- goes in the sheet name
+    row_label: str  # "Year" / "Hydro Year" / "Met Year"
+    year_col: str
+    frame: pd.DataFrame
+    period_order: tuple[str, ...]
+    month_order: tuple[str, ...]
+    label_fn: Callable[[Any], str] | None
+
+
+def _year_framings(pre: PreprocessedData) -> tuple[_YearFraming, ...]:
+    """The 3 Cal/Hydro/Met framings of ``pre`` at its own resolution."""
+    info = RESOLUTION_INFO[pre.resolution]
+    return (
+        _YearFraming(
+            "Cal_Year",
+            "Year",
+            COL_YEAR,
+            pre.calendar,
+            info.cal_periods,
+            CAL_MONTHS,
+            None,
+        ),
+        _YearFraming(
+            "Hydro_Year",
+            "Hydro Year",
+            COL_HYDRO_YEAR,
+            pre.hydro,
+            info.hydro_periods,
+            HYDRO_MONTHS,
+            hydro_year_label,
+        ),
+        _YearFraming(
+            "Met_Year",
+            "Met Year",
+            COL_MET_YEAR,
+            pre.met,
+            info.met_periods,
+            MET_MONTHS,
+            met_year_label,
+        ),
+    )
+
+
+def _dekad_year_framings(pre: PreprocessedData) -> tuple[_YearFraming, ...]:
+    """The 3 Cal/Hydro/Met framings of dekads derived from a *daily* ``pre``.
+
+    Lets a daily-only record also produce 10-Daily raw-value sheets, the same
+    way :func:`analyze_10daily_from_daily` derives 10-Daily trend sheets.
+    """
+    return (
+        _YearFraming(
+            "Cal_Year",
+            "Year",
+            COL_YEAR,
+            dekads_from_daily(pre.calendar),
+            CAL_DEKADS,
+            CAL_MONTHS,
+            None,
+        ),
+        _YearFraming(
+            "Hydro_Year",
+            "Hydro Year",
+            COL_HYDRO_YEAR,
+            dekads_from_daily(pre.hydro),
+            HYDRO_DEKADS,
+            HYDRO_MONTHS,
+            hydro_year_label,
+        ),
+        _YearFraming(
+            "Met_Year",
+            "Met Year",
+            COL_MET_YEAR,
+            dekads_from_daily(pre.met),
+            MET_DEKADS,
+            MET_MONTHS,
+            met_year_label,
+        ),
+    )
+
+
+# Excel's sheet-tab-name limit is 31 characters. "10Daily_Mean_Data_..._Cusecs"
+# is the one sheet-tag/unit combination long enough to blow past it (up to 35
+# chars for the Hydro_Year case), so only those sheet *names* (not their
+# titles or row labels) abbreviate the year-type -- CY/HY/MY instead of
+# Cal_Year/Hydro_Year/Met_Year.
+_ABBREVIATED_FRAMING_KEY = {"Cal_Year": "CY", "Hydro_Year": "HY", "Met_Year": "MY"}
+
+
+def _write_period_data_sheets(
+    wb: Workbook,
+    framings: Sequence[_YearFraming],
+    *,
+    sheet_tag: str,
+    quantity: str,
+    value_col: str,
+    unit_label: str,
+    title: str,
+    abbreviate_sheet_key: bool = False,
+) -> None:
+    """Write one Data pivot sheet per Cal/Hydro/Met Year framing.
+
+    ``sheet_tag`` is the sheet-name prefix (e.g. ``"Daily"``/``"10Daily_Mean"``);
+    ``quantity`` is the human title fragment (e.g. ``"Daily Inflow"``).
+    """
+    for framing in framings:
+        pivot = framing.frame.pivot_table(
+            index=framing.year_col,
+            columns=COL_PERIOD,
+            values=value_col,
+            aggfunc="first",
+        )
+        sheet_key = (
+            _ABBREVIATED_FRAMING_KEY[framing.key]
+            if abbreviate_sheet_key
+            else framing.key
+        )
+        write_period_data_sheet(
+            wb.create_sheet(f"{sheet_tag}_Data_{sheet_key}_{unit_label}"),
+            pivot,
+            title=f"{quantity} ({unit_label}) - {title} [{framing.row_label}]",
+            period_order=list(framing.period_order),
+            month_order=list(framing.month_order),
+            row_label=framing.row_label,
+            unit=unit_label,
+            label_fn=framing.label_fn,
+        )
+
+
+@dataclass(frozen=True)
 class ReportColumn:
     """One column to analyse in a report, with its display unit label.
 
@@ -540,6 +687,7 @@ def generate_report(
     is_daily = pre.resolution is TimeResolution.DAILY
     primary_label = "Daily" if is_daily else "10Daily"
     primary_desc = "Daily Inflow" if is_daily else "10-Daily Mean Inflow"
+    primary_vol_desc = "Daily Inflow Volume" if is_daily else "10-Daily Inflow Volume"
 
     wb = Workbook()
     default = wb.active
@@ -567,12 +715,36 @@ def generate_report(
                 wb.create_sheet(f"10Daily_Trends_{rc.unit_label}"),
                 dekadal_trends,
                 title=(
-                    f"10-Daily Mean Inflow Trend Analysis - {title} "
-                    f"[{rc.unit_label}]"
+                    f"10-Daily Mean Inflow Trend Analysis - {title} [{rc.unit_label}]"
                 ),
                 index_label="10Daily",
                 unit=rc.unit_label,
             )
+
+        # Raw-value Data sheets: one per Cal/Hydro/Met Year framing, always
+        # (independent of the `calendar` trend-framing choice above).
+        _write_period_data_sheets(
+            wb,
+            _year_framings(pre),
+            sheet_tag="Daily" if is_daily else "10Daily_Mean",
+            quantity=primary_desc,
+            value_col=rc.column,
+            unit_label=rc.unit_label,
+            title=title,
+            abbreviate_sheet_key=not is_daily,
+        )
+        if is_daily:
+            _write_period_data_sheets(
+                wb,
+                _dekad_year_framings(pre),
+                sheet_tag="10Daily_Mean",
+                quantity="10-Daily Mean Inflow",
+                value_col=rc.column,
+                unit_label=rc.unit_label,
+                title=title,
+                abbreviate_sheet_key=True,
+            )
+
         if include_descriptive:
             desc = _reindex_to_order(
                 describe_by(frame, value_col=rc.column, by=COL_PERIOD), order
@@ -587,6 +759,25 @@ def generate_report(
 
         if rc.volume_column is not None:
             vol_unit = rc.volume_unit_label or ""
+            _write_period_data_sheets(
+                wb,
+                _year_framings(pre),
+                sheet_tag=primary_label,
+                quantity=primary_vol_desc,
+                value_col=rc.volume_column,
+                unit_label=vol_unit,
+                title=title,
+            )
+            if is_daily:
+                _write_period_data_sheets(
+                    wb,
+                    _dekad_year_framings(pre),
+                    sheet_tag="10Daily",
+                    quantity="10-Daily Inflow Volume",
+                    value_col=rc.volume_column,
+                    unit_label=vol_unit,
+                    title=title,
+                )
             monthly_trend = analyze_monthly_volumes(
                 pre.hydro, value_col=rc.volume_column, alpha=alpha
             )
