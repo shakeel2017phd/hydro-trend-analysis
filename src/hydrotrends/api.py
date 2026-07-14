@@ -40,13 +40,16 @@ from .core.constants import (
     COL_PERIOD,
     COL_YEAR,
     DEFAULT_ALPHA,
+    HYDRO_DEKADS,
     HYDRO_MONTHS,
     MOVING_AVERAGE_WINDOW,
     RESOLUTION_INFO,
+    TimeResolution,
 )
 from .core.utils import significance_stars, to_float_array
 from .data.preprocessing import (
     PreprocessedData,
+    dekads_from_daily,
     hydro_seasonal_volumes,
     met_seasonal_volumes,
     monthly_volumes,
@@ -72,6 +75,7 @@ __all__ = [
     "analyze_series",
     "analyze_by_period",
     "analyze_preprocessed",
+    "analyze_10daily_from_daily",
     "analyze_monthly_volumes",
     "analyze_hydro_seasonal_volumes",
     "analyze_met_seasonal_volumes",
@@ -103,14 +107,23 @@ _HYDRO_SEASON_LABELS: dict[str, str] = {
 }
 
 # Meteorological seasons (calendar-based; see met_seasonal_volumes for the
-# Winter year-boundary convention), in calendar order.
-_MET_SEASON_ORDER: tuple[str, ...] = ("Winter", "Spring", "Summer", "Monsoon", "Autumn")
+# Winter year-boundary convention), in calendar order, plus the met-year
+# annual total as the final row (mirrors _HYDRO_SEASON_ORDER's "Annual").
+_MET_SEASON_ORDER: tuple[str, ...] = (
+    "Winter",
+    "Spring",
+    "Summer",
+    "Monsoon",
+    "Autumn",
+    "Annual",
+)
 _MET_SEASON_LABELS: dict[str, str] = {
     "Winter": "Winter   (Dec–Feb)",
     "Spring": "Spring   (Mar–Apr)",
     "Summer": "Summer   (May–Jun)",
     "Monsoon": "Monsoon  (Jul–Sep)",
     "Autumn": "Autumn   (Oct–Nov)",
+    "Annual": "Annual   (Dec–Nov)",
 }
 
 _MIN_FOR_TRENDS = 4  # matches the source's n < 4 guard
@@ -310,6 +323,32 @@ def analyze_preprocessed(
     )
 
 
+def analyze_10daily_from_daily(
+    daily_hydro: pd.DataFrame,
+    *,
+    value_col: str,
+    alpha: float = DEFAULT_ALPHA,
+) -> pd.DataFrame:
+    """Trend analysis of dekad-averaged flow, derived from a daily record.
+
+    One row per dekad (``HYDRO_DEKADS`` order: Apr1...Mar3). Aggregates the
+    daily hydro frame into dekads (see
+    :func:`~hydrotrends.data.preprocessing.dekads_from_daily`), then runs the
+    same per-period analysis the native 10-daily pathway does — sorted by,
+    and reporting, calendar ``Year`` (matching :func:`analyze_preprocessed`'s
+    year-axis convention). Mirrors the source's ``RESULTS["10daily_<col>"]``.
+    """
+    dekadal = dekads_from_daily(daily_hydro)
+    return analyze_by_period(
+        dekadal,
+        value_col=value_col,
+        period_col=COL_PERIOD,
+        year_col=COL_YEAR,
+        order=list(HYDRO_DEKADS),
+        alpha=alpha,
+    )
+
+
 def analyze_monthly_volumes(
     hydro: pd.DataFrame,
     *,
@@ -498,6 +537,9 @@ def generate_report(
     frame = pre.calendar if calendar else pre.hydro
     info = RESOLUTION_INFO[pre.resolution]
     order = list(info.cal_periods if calendar else info.hydro_periods)
+    is_daily = pre.resolution is TimeResolution.DAILY
+    primary_label = "Daily" if is_daily else "10Daily"
+    primary_desc = "Daily Inflow" if is_daily else "10-Daily Mean Inflow"
 
     wb = Workbook()
     default = wb.active
@@ -508,12 +550,29 @@ def generate_report(
             pre, value_col=rc.column, calendar=calendar, alpha=alpha
         )
         write_results_sheet(
-            wb.create_sheet(f"Trends ({rc.unit_label})"),
+            wb.create_sheet(f"{primary_label}_Trends_{rc.unit_label}"),
             trends,
-            title=f"{title} — {rc.unit_label}",
-            index_label="Period",
+            title=f"{primary_desc} Trend Analysis - {title} [{rc.unit_label}]",
+            index_label=primary_label,
             unit=rc.unit_label,
         )
+        if is_daily:
+            # A daily record can also produce the 10-daily (dekad-averaged)
+            # trend table, derived on the fly -- no separate 10-daily input
+            # needed (see dekads_from_daily).
+            dekadal_trends = analyze_10daily_from_daily(
+                pre.hydro, value_col=rc.column, alpha=alpha
+            )
+            write_results_sheet(
+                wb.create_sheet(f"10Daily_Trends_{rc.unit_label}"),
+                dekadal_trends,
+                title=(
+                    f"10-Daily Mean Inflow Trend Analysis - {title} "
+                    f"[{rc.unit_label}]"
+                ),
+                index_label="10Daily",
+                unit=rc.unit_label,
+            )
         if include_descriptive:
             desc = _reindex_to_order(
                 describe_by(frame, value_col=rc.column, by=COL_PERIOD), order
@@ -532,10 +591,10 @@ def generate_report(
                 pre.hydro, value_col=rc.volume_column, alpha=alpha
             )
             write_results_sheet(
-                wb.create_sheet(f"Monthly Trends ({vol_unit})"),
+                wb.create_sheet(f"Monthly_Trends_{vol_unit}"),
                 monthly_trend,
-                title=f"{title} — Monthly Volume Trend ({vol_unit})",
-                index_label="Month",
+                title=f"Monthly Inflow Trend Analysis - {title} [{vol_unit}]",
+                index_label="Monthly",
                 unit=vol_unit,
             )
             if include_descriptive:
@@ -552,10 +611,11 @@ def generate_report(
                     pre.hydro, value_col=rc.volume_column, alpha=alpha
                 )
                 write_results_sheet(
-                    wb.create_sheet(f"Hydro Season Trends ({vol_unit})"),
+                    wb.create_sheet(f"Hydro_Season_Trends_{vol_unit}"),
                     hydro_trend,
                     title=(
-                        f"{title} — Hydro Seasonal & Annual Volume Trend ({vol_unit})"
+                        f"Hydro-Seasonal & Annual Inflow Volume Trend Analysis - "
+                        f"{title} [{vol_unit}]"
                     ),
                     index_label="Season",
                     unit=vol_unit,
@@ -579,9 +639,12 @@ def generate_report(
                     pre.hydro, value_col=rc.volume_column, alpha=alpha
                 )
                 write_results_sheet(
-                    wb.create_sheet(f"Met Season Trends ({vol_unit})"),
+                    wb.create_sheet(f"Met_Season_Trends_{vol_unit}"),
                     met_trend,
-                    title=f"{title} — Meteorological Season Volume Trend ({vol_unit})",
+                    title=(
+                        f"Meteorological-Seasonal Inflow Volume Trend Analysis - "
+                        f"{title} [{vol_unit}]"
+                    ),
                     index_label="Met Season",
                     unit=vol_unit,
                 )

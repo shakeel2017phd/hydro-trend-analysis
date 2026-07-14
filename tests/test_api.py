@@ -131,8 +131,12 @@ def test_generate_report_end_to_end(daily_pre, tmp_path):
     )
     assert out.exists()
     wb = load_workbook(out)
-    assert "Cover" in wb.sheetnames and "Trends (Cusecs)" in wb.sheetnames
-    assert wb["Trends (Cusecs)"].cell(4, 1).value == "Apr-01"  # hydro order
+    assert "Cover" in wb.sheetnames and "Daily_Trends_Cusecs" in wb.sheetnames
+    assert "10Daily_Trends_Cusecs" in wb.sheetnames
+    ws = wb["Daily_Trends_Cusecs"]
+    assert ws.cell(1, 1).value == "Daily Inflow Trend Analysis - Test Report [Cusecs]"
+    assert ws.cell(2, 1).value == "Daily"
+    assert ws.cell(4, 1).value == "Apr-01"  # hydro order
 
 
 # ── monthly / seasonal volume aggregation + trend analysis ──────────────────
@@ -168,6 +172,7 @@ def test_analyze_met_seasonal_volumes_order_and_trend():
         "Summer",
         "Monsoon",
         "Autumn",
+        "Annual",
     ]
     # Interior years have n=10; Winter/Spring can lose an edge year to the
     # calendar-year-boundary/hydro-year-boundary effects documented on
@@ -216,15 +221,15 @@ def test_generate_report_writes_volume_sheets_when_paired(tmp_path):
     )
     wb = load_workbook(out)
     for name in (
-        "Monthly Trends (MAF)",
+        "Monthly_Trends_MAF",
         "Monthly Descriptive (MAF)",
-        "Hydro Season Trends (MAF)",
+        "Hydro_Season_Trends_MAF",
         "Hydro Season Descriptive (MAF)",
-        "Met Season Trends (MAF)",
+        "Met_Season_Trends_MAF",
         "Met Season Descriptive (MAF)",
     ):
         assert name in wb.sheetnames
-    assert wb["Monthly Trends (MAF)"].cell(4, 1).value == "Apr"
+    assert wb["Monthly_Trends_MAF"].cell(4, 1).value == "Apr"
 
 
 def test_generate_report_omits_volume_sheets_without_pairing(daily_pre, tmp_path):
@@ -235,7 +240,9 @@ def test_generate_report_omits_volume_sheets_without_pairing(daily_pre, tmp_path
         title="Test Report",
     )
     wb = load_workbook(out)
-    assert not any("Monthly Trends" in s or "Season Trends" in s for s in wb.sheetnames)
+    assert not any(
+        "Monthly_Trends" in s or "Season_Trends" in s for s in wb.sheetnames
+    )
 
 
 def test_generate_report_season_schemes_gating(tmp_path):
@@ -255,6 +262,6 @@ def test_generate_report_season_schemes_gating(tmp_path):
         season_schemes=(SeasonScheme.CROPPING,),
     )
     sheets = load_workbook(out).sheetnames
-    assert "Hydro Season Trends (MAF)" in sheets
-    assert "Met Season Trends (MAF)" not in sheets
-    assert "Monthly Trends (MAF)" in sheets  # not gated by season_schemes
+    assert "Hydro_Season_Trends_MAF" in sheets
+    assert "Met_Season_Trends_MAF" not in sheets
+    assert "Monthly_Trends_MAF" in sheets  # not gated by season_schemes

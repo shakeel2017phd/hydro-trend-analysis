@@ -130,7 +130,7 @@ def test_met_seasonal_volumes_keys_and_calendar_seasons_match_manual_groupby(
     daily_pre,
 ):
     met = ht.met_seasonal_volumes(daily_pre.hydro)
-    assert set(met) == {"Winter", "Spring", "Summer", "Monsoon", "Autumn"}
+    assert set(met) == {"Winter", "Spring", "Summer", "Monsoon", "Autumn", "Annual"}
 
     # Seasons that don't cross the Dec/Jan boundary must match a plain
     # calendar-year groupby exactly.
@@ -172,3 +172,68 @@ def test_met_seasonal_volumes_winter_rolls_december_into_next_year():
         (hydro[k.COL_YEAR] == 2001) & (hydro[k.COL_MONTH_NUM].isin([1, 2]))
     ][k.COL_VOL_MAF].sum()
     assert math.isclose(winter.loc[2001], dec_2000 + jan_feb_2001)
+
+
+def test_met_seasonal_volumes_annual_equals_sum_of_seasons(daily_pre):
+    # Only compare met-years where all 5 seasons have data -- edge-of-record
+    # met-years can have a partial Winter/Spring (documented on
+    # met_seasonal_volumes), where "Annual" still reflects the true partial
+    # total but a season-by-season reconstruction hits a NaN from misaligned
+    # indices; that's a property of the test's reconstruction, not a bug.
+    met = ht.met_seasonal_volumes(daily_pre.hydro)
+    seasons = ("Winter", "Spring", "Summer", "Monsoon", "Autumn")
+    complete_years = set.intersection(*(set(met[s].index) for s in seasons))
+    combined = sum(met[s][k.COL_VOL_MAF] for s in seasons).loc[sorted(complete_years)]
+    pd.testing.assert_series_equal(
+        met["Annual"][k.COL_VOL_MAF].loc[sorted(complete_years)],
+        combined,
+        check_names=False,
+    )
+
+
+def test_dekads_from_daily_matches_manual_groupby(daily_pre):
+    from hydrotrends.data.preprocessing import dekads_from_daily
+
+    dekadal = dekads_from_daily(daily_pre.hydro)
+    assert set(dekadal.columns) >= {
+        k.COL_YEAR,
+        k.COL_HYDRO_YEAR,
+        k.COL_MONTH,
+        k.COL_MONTH_NUM,
+        k.COL_DEKAD,
+        k.COL_FLOW_CUSECS,
+        k.COL_FLOW_CUMECS,
+        k.COL_VOL_MAF,
+        k.COL_VOL_BCM,
+        k.COL_PERIOD,
+    }
+    assert dekadal[k.COL_PERIOD].iloc[0] == dekadal[k.COL_MONTH].iloc[0] + str(
+        dekadal[k.COL_DEKAD].iloc[0]
+    )
+
+    expect = (
+        daily_pre.hydro.groupby([k.COL_HYDRO_YEAR, k.COL_MONTH, k.COL_DEKAD])[
+            k.COL_FLOW_CUSECS
+        ]
+        .mean()
+        .rename("expect")
+    )
+    got = dekadal.set_index([k.COL_HYDRO_YEAR, k.COL_MONTH, k.COL_DEKAD])[
+        k.COL_FLOW_CUSECS
+    ]
+    pd.testing.assert_series_equal(
+        got.sort_index(), expect.sort_index(), check_names=False
+    )
+
+
+def test_dekads_from_daily_volume_matches_daily_sum(daily_pre):
+    from hydrotrends.data.preprocessing import dekads_from_daily
+
+    dekadal = dekads_from_daily(daily_pre.hydro)
+    expect = daily_pre.hydro.groupby([k.COL_HYDRO_YEAR, k.COL_MONTH, k.COL_DEKAD])[
+        k.COL_VOL_MAF
+    ].sum()
+    got = dekadal.set_index([k.COL_HYDRO_YEAR, k.COL_MONTH, k.COL_DEKAD])[k.COL_VOL_MAF]
+    pd.testing.assert_series_equal(
+        got.sort_index(), expect.sort_index(), check_names=False
+    )

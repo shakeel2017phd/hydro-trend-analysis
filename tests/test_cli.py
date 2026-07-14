@@ -81,12 +81,12 @@ def test_analyze_writes_monthly_and_seasonal_volume_sheets(tmp_path):
     )
     maf_sheets = load_workbook(tmp_path / "r_Cusecs_MAF.xlsx").sheetnames
     bcm_sheets = load_workbook(tmp_path / "r_Cumecs_BCM.xlsx").sheetnames
-    assert "Monthly Trends (MAF)" in maf_sheets
-    assert "Hydro Season Trends (MAF)" in maf_sheets
-    assert "Met Season Trends (MAF)" in maf_sheets
-    assert "Monthly Trends (BCM)" in bcm_sheets
-    assert "Hydro Season Trends (BCM)" in bcm_sheets
-    assert "Met Season Trends (BCM)" in bcm_sheets
+    assert "Monthly_Trends_MAF" in maf_sheets
+    assert "Hydro_Season_Trends_MAF" in maf_sheets
+    assert "Met_Season_Trends_MAF" in maf_sheets
+    assert "Monthly_Trends_BCM" in bcm_sheets
+    assert "Hydro_Season_Trends_BCM" in bcm_sheets
+    assert "Met_Season_Trends_BCM" in bcm_sheets
 
 
 def test_no_descriptive(tmp_path):

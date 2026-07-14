@@ -147,7 +147,7 @@ STAT_GROUPS: tuple[StatGroup, ...] = (
         ),
     ),
     StatGroup(
-        "INNOVATIVE TREND (ITA)",
+        "INNOVATIVE TREND ANALYSIS (ITA)",
         "4B0082",
         (
             StatColumn("ITA Trend", "ita_trend", ColumnKind.TREND),
@@ -155,12 +155,12 @@ STAT_GROUPS: tuple[StatGroup, ...] = (
         ),
     ),
     StatGroup(
-        "5-YR BACKWARD MA",
+        "5-YEARS BACKWARD MOVING AVERAGE (BMA5)",
         "215868",
         (
-            _num("MA5 Mean", "ma5_mean"),
-            _num("MA5 Std", "ma5_std"),
-            StatColumn("MA5 Trend", "ma5_trend", ColumnKind.TREND),
+            _num("BMA5 Mean", "ma5_mean"),
+            _num("BMA5 Std", "ma5_std"),
+            StatColumn("BMA5 Trend", "ma5_trend", ColumnKind.TREND),
         ),
     ),
     StatGroup(
@@ -492,16 +492,60 @@ class CoverRow:
 DEFAULT_COVER_ROWS: tuple[CoverRow, ...] = (
     CoverRow("SHEET INDEX", is_section=True),
     CoverRow(
-        "*_Trend_* sheets",
-        "Descriptive statistics + all trend tests, one row per period",
+        "Daily_Trends_...",
+        "Full trend analysis (all 7 methods) for each calendar day, across "
+        "hydrological years",
     ),
-    CoverRow("*_Descriptive_* sheets", "Per-period descriptive statistics"),
+    CoverRow(
+        "10Daily_Trends_...",
+        "Full trend analysis (all 7 methods) for each 10-daily (dekad) "
+        "period, across years",
+    ),
+    CoverRow(
+        "Monthly_Trends_...",
+        "Full trend analysis of total monthly volume, across hydrological years",
+    ),
+    CoverRow(
+        "Hydro_Season_Trends_...",
+        "Full trend analysis of cropping-seasonal & annual volume "
+        "(Early/Late Kharif, Kharif, Rabi, Annual)",
+    ),
+    CoverRow(
+        "Met_Season_Trends_...",
+        "Full trend analysis of meteorological-seasonal & annual volume "
+        "(Winter/Spring/Summer/Monsoon/Autumn, Annual Dec\u2013Nov)",
+    ),
+    CoverRow(
+        "*_Descriptive_* sheets",
+        "Per-period/month/season descriptive statistics only (no trend tests)",
+    ),
+    CoverRow(""),
+    CoverRow("ABBREVIATIONS", is_section=True),
+    CoverRow("MK", "Mann-Kendall trend test (original, rank-based)"),
+    CoverRow("MMK", "Modified Mann-Kendall (Hamed-Rao autocorrelation correction)"),
+    CoverRow("ITA", "Innovative Trend Analysis (Sen's two-half comparison method)"),
+    CoverRow("BMA5", "5-Years Backward Moving Average"),
+    CoverRow("CP", "Change Point (Pettitt / CUSUM / Bai-Perron)"),
+    CoverRow("CV", "Coefficient of Variation (Std Dev / Mean \u00d7 100)"),
+    CoverRow("R\u00b2", "Coefficient of Determination (regression fit quality)"),
+    CoverRow("Z", "Z-score (standardised Mann-Kendall test statistic)"),
+    CoverRow("P10 / P25 / P75 / P90", "10th / 25th / 75th / 90th Percentile"),
+    CoverRow("MAF", "Million Acre-Feet"),
+    CoverRow("BCM", "Billion Cubic Metres"),
+    CoverRow("Hydro Year", "Hydrological Year (Apr 1 \u2192 Mar 31, labelled YYYY-YY)"),
+    CoverRow("Met Year", "Meteorological Year (Dec 1 \u2192 Nov 30)"),
     CoverRow(""),
     CoverRow("NUMBER FORMAT RULES", is_section=True),
-    CoverRow("Cusecs (mean, min, max, ...)", "0 decimal places (whole numbers)"),
-    CoverRow("Cumecs / Volumes / R\u00b2 / Z", "2 decimal places"),
-    CoverRow("p-values", "3 decimal places"),
-    CoverRow("Sen's / Linear / ITA slope", "3 decimal places"),
+    CoverRow(
+        "Cusecs (mean, min, max, etc)",
+        "0 decimal places (strict whole numbers)  \u2192  e.g. 15302",
+    ),
+    CoverRow(
+        "General (Cumecs, Vol, R\u00b2, Z)",
+        "2 decimal places  \u2192  e.g. 14.92, 0.09",
+    ),
+    CoverRow("p-values", "3 decimal places  \u2192  e.g. 0.007, 0.024"),
+    CoverRow("Sen's/Lin/ITA slope", "3 decimal places  \u2192  e.g. -0.036, 0.002"),
 )
 
 _COVER_WIDTH = 11  # columns A..K

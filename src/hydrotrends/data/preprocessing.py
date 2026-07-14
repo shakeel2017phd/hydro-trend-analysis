@@ -70,6 +70,7 @@ __all__ = [
     "enrich",
     "preprocess",
     "preprocess_all",
+    "dekads_from_daily",
     "monthly_volumes",
     "hydro_seasonal_volumes",
     "met_seasonal_volumes",
@@ -253,6 +254,38 @@ def preprocess_all(
     return [(spec, preprocess(df, spec.resolution)) for spec, df in loaded]
 
 
+def dekads_from_daily(daily_hydro: pd.DataFrame) -> pd.DataFrame:
+    """Aggregate a daily hydro frame into per-dekad rows.
+
+    Mirrors the source script's ``dekadal_hy`` exactly: groups by
+    ``(Year, HydroYear, Month, MonthNum, Dekad)``, averaging
+    ``Inflow_Cusecs``/``Inflow_Cumecs`` and summing ``Vol_MAF``/``Vol_BCM``.
+    The result carries a ``Period`` column in the same ``"{Month}{Dekad}"``
+    format (e.g. ``"Apr1"``) as a *native* 10-daily input's own ``Period``
+    column, so it can be fed into :func:`~hydrotrends.api.analyze_by_period`
+    exactly like one — this is what lets a daily-only record produce a
+    10-daily trend table without a separate 10-daily source file.
+    """
+    grouped = (
+        daily_hydro.groupby(
+            [COL_YEAR, COL_HYDRO_YEAR, COL_MONTH, COL_MONTH_NUM, COL_DEKAD]
+        )
+        .agg(
+            **{
+                COL_FLOW_CUSECS: (COL_FLOW_CUSECS, "mean"),
+                COL_FLOW_CUMECS: (COL_FLOW_CUMECS, "mean"),
+                COL_VOL_MAF: (COL_VOL_MAF, "sum"),
+                COL_VOL_BCM: (COL_VOL_BCM, "sum"),
+            }
+        )
+        .reset_index()
+    )
+    grouped[COL_PERIOD] = grouped[COL_MONTH] + grouped[COL_DEKAD].astype(str)
+    return grouped.sort_values([COL_HYDRO_YEAR, COL_MONTH_NUM, COL_DEKAD]).reset_index(
+        drop=True
+    )
+
+
 def monthly_volumes(hydro: pd.DataFrame) -> pd.DataFrame:
     """Per-hydrological-year, per-calendar-month total volumes.
 
@@ -291,11 +324,16 @@ def hydro_seasonal_volumes(hydro: pd.DataFrame) -> dict[str, pd.DataFrame]:
 
 
 def met_seasonal_volumes(hydro: pd.DataFrame) -> dict[str, pd.DataFrame]:
-    """Per-meteorological-year total volume for each meteorological season.
+    """Per-meteorological-year total volume for each meteorological season,
+    plus the met-year annual total.
 
     Keyed ``Winter``/``Spring``/``Summer``/``Monsoon``/``Autumn``
-    (:class:`~hydrotrends.core.constants.MetSeason`); each value is a frame
-    indexed by a **meteorological year** with summed ``Vol_MAF``/``Vol_BCM``.
+    (:class:`~hydrotrends.core.constants.MetSeason`) and ``Annual``; each
+    value is a frame indexed by a **meteorological year** with summed
+    ``Vol_MAF``/``Vol_BCM``. ``Annual`` is every season combined, i.e. the
+    full Dec-through-Nov met year (the same year-boundary convention makes
+    this automatic: Dec(Y) and Jan-Nov(Y+1) both roll to met-year Y+1, so a
+    plain unfiltered groupby already sums exactly one full Dec-Nov span).
 
     Winter (Dec + Jan + Feb) spans a calendar-year boundary, so it's labelled
     by the year its Jan/Feb fall in — December 2019 counts toward
@@ -312,9 +350,11 @@ def met_seasonal_volumes(hydro: pd.DataFrame) -> dict[str, pd.DataFrame]:
         hydro[COL_MONTH_NUM] == _DECEMBER, hydro[COL_YEAR] + 1, hydro[COL_YEAR]
     )
     working = hydro.assign(_MetYear=met_year)
-    return {
+    result = {
         season: working[working[COL_MET_SEASON] == season]
         .groupby("_MetYear")[[COL_VOL_MAF, COL_VOL_BCM]]
         .sum()
         for season in _MET_SEASON_ORDER
     }
+    result["Annual"] = working.groupby("_MetYear")[[COL_VOL_MAF, COL_VOL_BCM]].sum()
+    return result
