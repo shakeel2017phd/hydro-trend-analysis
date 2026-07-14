@@ -16,7 +16,7 @@ include columns (e.g. change-point detection) before every producer exists.
 from __future__ import annotations
 
 import math
-from collections.abc import Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
@@ -29,6 +29,9 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
 
+from ..core.constants import FULL_MONTHS
+from ..stats.descriptive import describe
+
 __all__ = [
     "ColumnKind",
     "StatColumn",
@@ -37,6 +40,10 @@ __all__ = [
     "ResultSheet",
     "write_results_sheet",
     "write_descriptive_sheet",
+    "write_period_data_sheet",
+    "write_monthly_data_sheet",
+    "write_seasonal_data_sheet",
+    "write_annual_data_sheet",
     "CoverRow",
     "DEFAULT_COVER_ROWS",
     "write_cover_sheet",
@@ -47,7 +54,10 @@ __all__ = [
 _HDR, _SUB, _SUB2 = "1F4E79", "2E75B6", "4472C4"
 _ALT, _WHT, _YEL = "D6E4F0", "FFFFFF", "FFF2CC"
 _GRN, _RED = "C6EFCE", "FFC7CE"
+_LGRN, _LRED = "E2EFDA", "FFE0E0"
 _CP_CLR = "FCE4D6"
+_STAT_BG, _STAT_BG2 = "F0F8FF", "E8F4FD"
+_CORNER_BG = "FFF9E6"
 _FONT = "Arial"
 
 _TREND_BG = {"increasing": _GRN, "decreasing": _RED, "no trend": _YEL}
@@ -473,6 +483,340 @@ def write_descriptive_sheet(
 
     ws.freeze_panes = "B3"
     widths = [15.0] + [10.0] * len(columns)
+    for i, width in enumerate(widths, 1):
+        ws.column_dimensions[get_column_letter(i)].width = width
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Data-value pivot sheets (raw values + row/column descriptive statistics)
+# ─────────────────────────────────────────────────────────────────────────────
+# The 15 v26 "HSTAT_LABELS" stats, reused as-is: they're exactly
+# _DESCRIPTIVE_COLUMNS with "N" dropped (see module docstring for _DESCRIPTIVE_COLUMNS).
+_HSTAT_COLUMNS = _DESCRIPTIVE_COLUMNS[1:]
+
+
+def _value_fmt(value: Any, unit: str) -> tuple[Any, str | None]:
+    """(cell value, number format) for a single raw data point, by unit."""
+    if value is None or (isinstance(value, float) and math.isnan(value)):
+        return "", None
+    v = float(value)
+    if unit == "Cusecs":
+        return int(round(v)), "0"
+    return round(v, 2), "0.00"
+
+
+def _hstat_row(values: Sequence[float], unit: str) -> list[tuple[Any, str | None]]:
+    """15 (value, number_format) pairs — the data-sheet stats row/column.
+
+    Computed by :func:`~hydrotrends.stats.descriptive.describe`, the same
+    function backing :func:`write_descriptive_sheet`, so the data sheets and
+    the descriptive sheets can never numerically disagree.
+    """
+    data = describe(values).to_dict()
+    return [
+        _descriptive_fmt(field, data[field], unit) for field, _header in _HSTAT_COLUMNS
+    ]
+
+
+def write_period_data_sheet(
+    ws: Worksheet,
+    pivot: pd.DataFrame,
+    *,
+    title: str,
+    period_order: Sequence[str],
+    month_order: Sequence[str],
+    row_label: str,
+    unit: str,
+) -> None:
+    """Write a Daily/10-Daily raw-value pivot.
+
+    One row per year, one column per calendar period (day-of-year or dekad,
+    grouped under merged month headers), plus row statistics (across a year's
+    periods) and column statistics (down a period across years).
+    """
+    ws.sheet_view.showGridLines = False
+    n_periods = len(period_order)
+    n_stats = len(_HSTAT_COLUMNS)
+    total_cols = 1 + n_periods + n_stats
+    stat_headers = [header for _field, header in _HSTAT_COLUMNS]
+
+    _merged_header(ws, 1, 1, total_cols, title, bg=_HDR, size=12)
+
+    _header(ws, 2, 1, row_label, bg=_SUB)
+    col = 2
+    for month in month_order:
+        span = sum(1 for p in period_order if p.startswith(month))
+        if span:
+            _merged_header(
+                ws,
+                2,
+                col,
+                col + span - 1,
+                FULL_MONTHS.get(month, month),
+                bg=_SUB,
+                size=9,
+            )
+            col += span
+    _merged_header(
+        ws, 2, col, col + n_stats - 1, "◀  Row Statistics (across columns)  ▶", bg=_SUB2
+    )
+
+    _header(ws, 3, 1, f"({row_label})", bg=_SUB, size=9)
+    for j, period in enumerate(period_order, start=2):
+        _header(ws, 3, j, period, bg=_SUB, size=9)
+    for j, header in enumerate(stat_headers, start=n_periods + 2):
+        _header(ws, 3, j, header, bg=_SUB2, size=9)
+
+    for i, (idx, row) in enumerate(pivot.iterrows()):
+        r = 4 + i
+        row_bg = _ALT if i % 2 == 0 else _WHT
+        _cell(ws, r, 1, str(idx), bg=row_bg, bold=True, align="left")
+        values: list[float] = []
+        for j, period in enumerate(period_order, start=2):
+            v = row.get(period, math.nan)
+            value, fmt = _value_fmt(v, unit)
+            _cell(ws, r, j, value, bg=row_bg, number_format=fmt)
+            if pd.notna(v):
+                values.append(float(v))
+        for j, (value, fmt) in enumerate(_hstat_row(values, unit), start=n_periods + 2):
+            _cell(ws, r, j, value, bg=_STAT_BG, number_format=fmt)
+
+    bottom = 4 + len(pivot)
+    period_stats = {
+        period: _hstat_row(
+            pivot[period].dropna().astype(float).tolist()
+            if period in pivot.columns
+            else [],
+            unit,
+        )
+        for period in period_order
+    }
+    for si, (_field, header) in enumerate(_HSTAT_COLUMNS):
+        r = bottom + si
+        bg_s = _STAT_BG if si % 2 == 0 else _STAT_BG2
+        _header(ws, r, 1, header, bg=_SUB2, size=9)
+        corner_values: list[float] = []
+        for j, period in enumerate(period_order, start=2):
+            value, fmt = period_stats[period][si]
+            _cell(ws, r, j, value, bg=bg_s, number_format=fmt)
+            if value != "":
+                corner_values.append(float(value))
+        for j, (value, fmt) in enumerate(
+            _hstat_row(corner_values, unit), start=n_periods + 2
+        ):
+            _cell(ws, r, j, value, bg=_CORNER_BG, number_format=fmt)
+
+    ws.freeze_panes = "B4"
+    widths = [12.0] + [8.0] * n_periods + [10.0] * n_stats
+    for i, width in enumerate(widths, 1):
+        ws.column_dimensions[get_column_letter(i)].width = width
+
+
+def write_monthly_data_sheet(
+    ws: Worksheet,
+    pivot: pd.DataFrame,
+    *,
+    title: str,
+    month_order: Sequence[str],
+    row_label: str = "Hydro Year",
+    unit: str = "MAF",
+) -> None:
+    """Write a Monthly volume pivot: one row per year, one column per month,
+    plus row & column descriptive statistics.
+    """
+    ws.sheet_view.showGridLines = False
+    n_months = len(month_order)
+    n_stats = len(_HSTAT_COLUMNS)
+    stat_headers = [header for _field, header in _HSTAT_COLUMNS]
+
+    _merged_header(ws, 1, 1, 1 + n_months + n_stats, title, bg=_HDR, size=12)
+    _header(ws, 2, 1, row_label, bg=_SUB)
+    for j, month in enumerate(month_order, start=2):
+        _header(ws, 2, j, month, bg=_SUB, size=9)
+    _merged_header(
+        ws,
+        2,
+        n_months + 2,
+        n_months + 1 + n_stats,
+        "◀  Row Statistics (across columns)  ▶",
+        bg=_SUB2,
+    )
+
+    _header(ws, 3, 1, "(YYYY-YY)", bg=_SUB, size=9)
+    for j in range(2, n_months + 2):
+        _header(ws, 3, j, "", bg=_SUB, size=9)
+    for j, header in enumerate(stat_headers, start=n_months + 2):
+        _header(ws, 3, j, header, bg=_SUB2, size=9)
+
+    for i, (idx, row) in enumerate(pivot.iterrows()):
+        r = 4 + i
+        row_bg = _ALT if i % 2 == 0 else _WHT
+        _cell(ws, r, 1, str(idx), bg=row_bg, bold=True, align="left")
+        values: list[float] = []
+        for j, month in enumerate(month_order, start=2):
+            v = row.get(month, math.nan)
+            if pd.notna(v):
+                _cell(ws, r, j, round(float(v), 2), bg=row_bg, number_format="0.00")
+                values.append(float(v))
+            else:
+                _cell(ws, r, j, "", bg=row_bg)
+        for j, (value, fmt) in enumerate(_hstat_row(values, unit), start=n_months + 2):
+            _cell(ws, r, j, value, bg=_STAT_BG, number_format=fmt)
+
+    bottom = 4 + len(pivot)
+    month_stats = {
+        month: _hstat_row(
+            pivot[month].dropna().astype(float).tolist()
+            if month in pivot.columns
+            else [],
+            unit,
+        )
+        for month in month_order
+    }
+    for si, (_field, header) in enumerate(_HSTAT_COLUMNS):
+        r = bottom + si
+        bg_s = _STAT_BG if si % 2 == 0 else _STAT_BG2
+        _header(ws, r, 1, header, bg=_SUB2, size=9)
+        corner_values: list[float] = []
+        for j, month in enumerate(month_order, start=2):
+            value, fmt = month_stats[month][si]
+            _cell(ws, r, j, value, bg=bg_s, number_format=fmt)
+            if value != "":
+                corner_values.append(float(value))
+        for j, (value, fmt) in enumerate(
+            _hstat_row(corner_values, unit), start=n_months + 2
+        ):
+            _cell(ws, r, j, value, bg=_CORNER_BG, number_format=fmt)
+
+    ws.freeze_panes = "B4"
+    widths = [12.0] + [10.0] * n_months + [10.0] * n_stats
+    for i, width in enumerate(widths, 1):
+        ws.column_dimensions[get_column_letter(i)].width = width
+
+
+def write_seasonal_data_sheet(
+    ws: Worksheet,
+    data: Mapping[str, pd.Series],
+    *,
+    title: str,
+    col_headers: Sequence[str],
+    sub_labels: Sequence[str],
+    all_years: Sequence[int],
+    col_keys: Sequence[str],
+    unit: str,
+    label_fn: Callable[[int], str],
+    row_label: str = "Hydro Year",
+) -> None:
+    """Write a season/annual volume pivot: one row per year, one column per
+    season (+ Annual), with column descriptive statistics only (no row
+    statistics: a year's seasons are different-length periods, not directly
+    comparable, so v26 never averages across them).
+    """
+    ws.sheet_view.showGridLines = False
+    n_cols = len(col_headers)
+    _merged_header(ws, 1, 1, 1 + n_cols, title, bg=_HDR, size=12)
+    _header(ws, 2, 1, row_label, bg=_SUB)
+    for j, header in enumerate(col_headers, start=2):
+        _header(ws, 2, j, header, bg=_SUB, size=9)
+    _header(ws, 3, 1, "(YYYY-YY)", bg=_SUB, size=9)
+    for j, sub in enumerate(sub_labels, start=2):
+        _header(ws, 3, j, sub, bg=_SUB, size=9)
+
+    for i, year in enumerate(all_years):
+        r = 4 + i
+        row_bg = _ALT if i % 2 == 0 else _WHT
+        _cell(ws, r, 1, label_fn(year), bg=row_bg, bold=True, align="left")
+        for j, key in enumerate(col_keys, start=2):
+            v = data[key].get(year, math.nan)
+            value, fmt = _value_fmt(v, unit)
+            _cell(ws, r, j, value, bg=row_bg, number_format=fmt)
+
+    bottom = 4 + len(all_years)
+    key_stats = {
+        key: _hstat_row(
+            [
+                float(v)
+                for v in (data[key].get(year, math.nan) for year in all_years)
+                if pd.notna(v)
+            ],
+            unit,
+        )
+        for key in col_keys
+    }
+    for si, (_field, header) in enumerate(_HSTAT_COLUMNS):
+        r = bottom + si
+        bg_s = _STAT_BG if si % 2 == 0 else _STAT_BG2
+        _header(ws, r, 1, header, bg=_SUB2, size=9)
+        for j, key in enumerate(col_keys, start=2):
+            value, fmt = key_stats[key][si]
+            _cell(ws, r, j, value, bg=bg_s, number_format=fmt)
+
+    ws.freeze_panes = "B4"
+    widths = [12.0] + [16.0] * n_cols
+    for i, width in enumerate(widths, 1):
+        ws.column_dimensions[get_column_letter(i)].width = width
+
+
+def write_annual_data_sheet(
+    ws: Worksheet,
+    ann_df: pd.DataFrame,
+    *,
+    title: str,
+    data_cols: Sequence[str],
+    label_fn: Callable[[int], str],
+    highlight_cols: frozenset[str] = frozenset(),
+    unit: str = "MAF",
+    row_label: str = "Hydro Year",
+) -> None:
+    """Write the annual volume/anomaly/moving-average summary sheet.
+
+    Non-percentage columns are sign-coloured (green >= 0 / red < 0);
+    percentage columns are only sign-coloured when listed in
+    ``highlight_cols`` (v26's convention, to keep the raw-unit anomaly the
+    visually dominant column and the percentage anomaly a lighter echo of it).
+    """
+    ws.sheet_view.showGridLines = False
+    n_cols = len(data_cols)
+    _merged_header(ws, 1, 1, 1 + n_cols, title, bg=_HDR, size=12)
+    _header(ws, 2, 1, row_label, bg=_SUB)
+    for j, header in enumerate(data_cols, start=2):
+        _header(ws, 2, j, header, bg=_SUB, size=9)
+    _header(ws, 3, 1, "(YYYY-YY)", bg=_SUB, size=9)
+    for j in range(2, n_cols + 2):
+        _header(ws, 3, j, "", bg=_SUB, size=9)
+
+    for i, (year, row) in enumerate(ann_df.iterrows()):
+        r = 4 + i
+        row_bg = _ALT if i % 2 == 0 else _WHT
+        _cell(ws, r, 1, label_fn(year), bg=row_bg, bold=True, align="left")
+        for j, col in enumerate(data_cols, start=2):
+            v = row.get(col, math.nan)
+            if pd.notna(v):
+                fv = round(float(v), 2)
+                if "%" in col:
+                    bg = (
+                        (_LGRN if fv >= 0 else _LRED)
+                        if col in highlight_cols
+                        else row_bg
+                    )
+                else:
+                    bg = _GRN if fv >= 0 else _RED
+                _cell(ws, r, j, fv, bg=bg, number_format="0.00")
+            else:
+                _cell(ws, r, j, "", bg=row_bg)
+
+    bottom = 4 + len(ann_df)
+    for si, (_field, header) in enumerate(_HSTAT_COLUMNS):
+        r = bottom + si
+        bg_s = _STAT_BG if si % 2 == 0 else _STAT_BG2
+        _header(ws, r, 1, header, bg=_SUB2, size=9)
+        for j, col in enumerate(data_cols, start=2):
+            values = ann_df[col].dropna().astype(float).tolist()
+            value, fmt = _hstat_row(values, unit)[si]
+            _cell(ws, r, j, value, bg=bg_s, number_format=fmt)
+
+    ws.freeze_panes = "B4"
+    widths = [14.0] + [14.0] * n_cols
     for i, width in enumerate(widths, 1):
         ws.column_dimensions[get_column_letter(i)].width = width
 

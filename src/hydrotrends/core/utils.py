@@ -47,6 +47,8 @@ __all__ = [
     "mean_flow_to_volume",
     "safe_round",
     "to_float_array",
+    "hydro_year_label",
+    "met_year_label",
 ]
 
 # Anything the vectorisable converters accept: a scalar or an array/Series.
@@ -162,3 +164,18 @@ def to_float_array(data: ArrayLike) -> np.ndarray:
         .to_numpy(dtype="float64")
     )
     return arr
+
+
+def hydro_year_label(hydro_year: int) -> str:
+    """YYYY-YY label for a hydrological year (Apr -> Mar), e.g. 2020 -> 2020-21."""
+    return f"{hydro_year}-{str(hydro_year + 1)[2:]}"
+
+
+def met_year_label(met_year: int) -> str:
+    """YYYY-YY label for a meteorological year (Dec -> Nov).
+
+    A met year is *labelled* by the year its Jan-Nov fall in (see
+    :func:`~hydrotrends.data.preprocessing.enrich`), so it *starts* the
+    previous calendar year's December, e.g. met year 2020 -> 2019-20.
+    """
+    return f"{met_year - 1}-{str(met_year)[2:]}"
