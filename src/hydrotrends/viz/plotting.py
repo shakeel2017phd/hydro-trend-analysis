@@ -24,7 +24,7 @@ import plotly.graph_objects as go
 import seaborn as sns
 from matplotlib.figure import Figure
 
-from ..core.constants import COL_DATE, FLOOD_CLASSES, FLOOD_COLORS
+from ..core.constants import COL_DATE, FLOOD_CLASSES, FLOOD_COLORS, LOWESS_FRAC
 from ..core.utils import significance_stars
 from ..core.validation import ArrayLike
 from ..stats.frequency import (
@@ -43,6 +43,9 @@ __all__ = [
     "flow_duration_curve_static",
     "flow_duration_curve_interactive",
     "trend_scatter",
+    "compute_lowess",
+    "parametric_bounds_plot",
+    "robust_bounds_plot",
     "distribution_grid",
     "flood_heatmap",
 ]
@@ -397,6 +400,227 @@ def trend_scatter(
     ax.grid(True, alpha=0.3)
     fig.tight_layout()
     return fig
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Parametric / robust bounds plots (LOWESS + central-tendency band + Sen's
+# slope + change-point marker) -- the source script's "Parametric Bounds" /
+# "Robust Bounds" plot types.
+# ─────────────────────────────────────────────────────────────────────────────
+def compute_lowess(
+    x: np.ndarray, y: np.ndarray, *, frac: float = LOWESS_FRAC
+) -> np.ndarray:
+    """Locally-weighted (tricube-kernel) linear smooth, one fit per point.
+
+    A minimal, dependency-free LOWESS: for each ``x[i]``, fits a weighted
+    linear regression to all points using a tricube weight on distance from
+    ``x[i]`` (weight 0 beyond the ``frac``-fraction-nearest neighbour), and
+    takes the fitted value at ``x[i]``. Ported verbatim (algorithmically) from
+    the source script's own ``compute_lowess``, which this reproduces exactly
+    rather than depending on ``statsmodels`` -- same reasoning as this
+    package's other "self-contained" statistical methods.
+    """
+    n = len(x)
+    y_smooth = np.zeros(n)
+    reach = int(np.ceil(frac * n))
+    for i in range(n):
+        dist = np.abs(x - x[i])
+        d_max = np.sort(dist)[reach] if reach < n else np.sort(dist)[-1]
+        if d_max == 0:
+            d_max = 1.0
+        weights = np.clip(1 - (dist / d_max) ** 3, 0, 1) ** 3
+        design = np.vstack((np.ones(n), x)).T
+        weighted_design = weights[:, None] * design
+        normal_matrix = design.T @ weighted_design
+        try:
+            beta = np.linalg.solve(normal_matrix, weighted_design.T @ y)
+            y_smooth[i] = beta[0] + beta[1] * x[i]
+        except np.linalg.LinAlgError:
+            y_smooth[i] = np.sum(weights * y) / np.sum(weights)
+    return y_smooth
+
+
+def _value_format(unit_label: str) -> str:
+    return ".0f" if "Cusec" in unit_label else ".2f"
+
+
+def _bounds_plot(
+    years: ArrayLike,
+    values: ArrayLike,
+    *,
+    center: str,
+    title: str | None,
+    default_title: str,
+    unit_label: str,
+    sen_slope: SenSlope | None,
+    change_point_year: float | None,
+    change_point_label: str,
+    lowess_frac: float,
+    figsize: tuple[float, float],
+) -> Figure:
+    years_arr = np.asarray(years, dtype="float64")
+    values_arr = np.asarray(values, dtype="float64")
+    fmt = _value_format(unit_label)
+    unit = f" ({unit_label})" if unit_label else ""
+
+    fig = Figure(figsize=figsize)
+    ax = fig.subplots()
+    ax.plot(
+        years_arr,
+        values_arr,
+        marker="o",
+        linestyle="-",
+        color="#1f77b4",
+        alpha=0.3,
+        label="Observed",
+    )
+    ax.plot(
+        years_arr,
+        compute_lowess(years_arr, values_arr, frac=lowess_frac),
+        color="#9467bd",
+        linewidth=3,
+        label="LOWESS",
+    )
+
+    median_val = float(np.median(values_arr))
+    if center == "mean":
+        mean_val = float(values_arr.mean())
+        std_val = float(values_arr.std(ddof=1))
+        ax.axhline(
+            mean_val,
+            color="green",
+            linestyle="--",
+            linewidth=2,
+            label=f"Mean ({mean_val:{fmt}})",
+        )
+        ax.axhline(
+            mean_val + 3 * std_val,
+            color="lightgreen",
+            linestyle="--",
+            linewidth=1.5,
+            label="± 3 Std Dev",
+        )
+        ax.axhline(
+            mean_val - 3 * std_val, color="lightgreen", linestyle="--", linewidth=1.5
+        )
+    else:  # "median"
+        q25, q75 = np.percentile(values_arr, 25), np.percentile(values_arr, 75)
+        iqr = q75 - q25
+        ax.axhline(
+            median_val,
+            color="green",
+            linestyle="--",
+            linewidth=2,
+            label=f"Median ({median_val:{fmt}})",
+        )
+        ax.axhline(
+            median_val + 1.5 * iqr,
+            color="paleturquoise",
+            linestyle="--",
+            linewidth=1.5,
+            label="± 1.5 × IQR",
+        )
+        ax.axhline(
+            median_val - 1.5 * iqr, color="paleturquoise", linestyle="--", linewidth=1.5
+        )
+
+    # Sen's-slope line is always anchored at the median point (the source's
+    # own convention, in both the parametric and robust variants).
+    if sen_slope is not None and np.isfinite(sen_slope.slope):
+        intercept = median_val - sen_slope.slope * float(np.median(years_arr))
+        ax.plot(
+            years_arr,
+            sen_slope.slope * years_arr + intercept,
+            color="#d62728",
+            linestyle="--",
+            linewidth=2,
+            label=f"Sen's Slope ({sen_slope.slope:.3f}/yr)",
+        )
+    if change_point_year is not None and not math.isnan(change_point_year):
+        cp = int(change_point_year)
+        ax.axvline(
+            x=cp,
+            color="black",
+            linestyle=":",
+            linewidth=2,
+            label=f"{change_point_label} ({cp})",
+        )
+
+    ax.set_title(title or default_title, fontweight="bold")
+    ax.set_ylabel(f"Value{unit}")
+    ax.legend(loc="best", fontsize="small")
+    fig.tight_layout()
+    return fig
+
+
+def parametric_bounds_plot(
+    years: ArrayLike,
+    values: ArrayLike,
+    *,
+    title: str | None = None,
+    unit_label: str = "",
+    sen_slope: SenSlope | None = None,
+    change_point_year: float | None = None,
+    lowess_frac: float = LOWESS_FRAC,
+    figsize: tuple[float, float] = (10.0, 5.0),
+) -> Figure:
+    """LOWESS + mean ± 3 Std Dev band + Sen's slope + Bai-Perron break.
+
+    The source script's "Parametric Bounds" plot. Pass a
+    :class:`~hydrotrends.stats.trends.SenSlope` to draw the Sen's-slope
+    overlay (anchored at the median point) and a ``change_point_year`` (e.g.
+    from :func:`~hydrotrends.stats.changepoint.bai_perron_change_point`,
+    mapped to a year by the caller) to mark the structural break.
+    """
+    unit = f" ({unit_label})" if unit_label else ""
+    return _bounds_plot(
+        years,
+        values,
+        center="mean",
+        title=title,
+        default_title=f"Inflow{unit} — Parametric Bounds",
+        unit_label=unit_label,
+        sen_slope=sen_slope,
+        change_point_year=change_point_year,
+        change_point_label="Bai-Perron Break",
+        lowess_frac=lowess_frac,
+        figsize=figsize,
+    )
+
+
+def robust_bounds_plot(
+    years: ArrayLike,
+    values: ArrayLike,
+    *,
+    title: str | None = None,
+    unit_label: str = "",
+    sen_slope: SenSlope | None = None,
+    change_point_year: float | None = None,
+    lowess_frac: float = LOWESS_FRAC,
+    figsize: tuple[float, float] = (10.0, 5.0),
+) -> Figure:
+    """LOWESS + median ± 1.5 × IQR band + Sen's slope + Pettitt break.
+
+    The source script's "Robust Bounds" plot -- the median/IQR-based
+    counterpart to :func:`parametric_bounds_plot`, less sensitive to
+    outliers. Pass a ``change_point_year`` from
+    :func:`~hydrotrends.stats.changepoint.pettitt_test` (mapped to a year by
+    the caller) to mark the break.
+    """
+    unit = f" ({unit_label})" if unit_label else ""
+    return _bounds_plot(
+        years,
+        values,
+        center="median",
+        title=title,
+        default_title=f"Inflow{unit} — Robust Bounds",
+        unit_label=unit_label,
+        sen_slope=sen_slope,
+        change_point_year=change_point_year,
+        change_point_label="Pettitt Break",
+        lowess_frac=lowess_frac,
+        figsize=figsize,
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────────────

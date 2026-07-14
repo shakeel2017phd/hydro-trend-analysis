@@ -57,6 +57,7 @@ from ..core.constants import (
     KHARIF_JUNE_SPLIT_DAY,
     LATE_KHARIF_MONTHS,
     MET_SEASONS,
+    MetSeason,
     Season,
     TimeResolution,
     VolumeUnit,
@@ -64,17 +65,57 @@ from ..core.constants import (
 from ..core.logging_config import get_logger
 from ..core.validation import find_complete_periods
 
-__all__ = ["PreprocessedData", "enrich", "preprocess", "preprocess_all"]
+__all__ = [
+    "PreprocessedData",
+    "enrich",
+    "preprocess",
+    "preprocess_all",
+    "monthly_volumes",
+    "hydro_seasonal_volumes",
+    "met_seasonal_volumes",
+]
 
 logger = get_logger(__name__)
 
 _CALENDAR_YEAR_START_MONTH = 1
 _JUNE = 6  # the month the Kharif season splits within
+_DECEMBER = 12  # the month Winter's met-year label rolls forward at
 
 # Month number -> meteorological season label (inverted from MET_SEASONS).
 _MONTH_TO_MET_SEASON: dict[int, str] = {
     month: season.value for season, months in MET_SEASONS.items() for month in months
 }
+
+# Which per-day (cropping) Season values roll up into each named hydrological
+# seasonal/annual total. Distinct from the *meteorological* seasons
+# (``MetSeason``) that ``met_seasonal_volumes`` aggregates below — the source
+# script and this package's day-level ``Season`` column only ever mean the
+# Kharif/Rabi cropping calendar, so the aggregation and analysis functions for
+# it are named ``hydro_season*`` to keep that unambiguous.
+# ``Kharif`` is Early + Late combined; ``Annual`` is every season (the source's
+# ``season_dfs`` builds these from ``df_hy`` the same way: an unfiltered
+# ``groupby("HydroYear")`` for Annual, a Season-filtered one for the rest).
+_HYDRO_SEASON_MEMBERSHIP: dict[str, tuple[str, ...]] = {
+    Season.EARLY_KHARIF.value: (Season.EARLY_KHARIF.value,),
+    Season.LATE_KHARIF.value: (Season.LATE_KHARIF.value,),
+    Season.KHARIF.value: (Season.EARLY_KHARIF.value, Season.LATE_KHARIF.value),
+    Season.RABI.value: (Season.RABI.value,),
+    Season.ANNUAL.value: (
+        Season.EARLY_KHARIF.value,
+        Season.LATE_KHARIF.value,
+        Season.RABI.value,
+    ),
+}
+
+# Meteorological seasons in calendar order (Winter first, since it starts the
+# meteorological year at December).
+_MET_SEASON_ORDER: tuple[str, ...] = (
+    MetSeason.WINTER.value,
+    MetSeason.SPRING.value,
+    MetSeason.SUMMER.value,
+    MetSeason.MONSOON.value,
+    MetSeason.AUTUMN.value,
+)
 
 
 @dataclass(frozen=True)
@@ -210,3 +251,70 @@ def preprocess_all(
 ) -> list[tuple[InputSpec, PreprocessedData]]:
     """Preprocess every ``(spec, frame)`` pair from :func:`readers.read_all`."""
     return [(spec, preprocess(df, spec.resolution)) for spec, df in loaded]
+
+
+def monthly_volumes(hydro: pd.DataFrame) -> pd.DataFrame:
+    """Per-hydrological-year, per-calendar-month total volumes.
+
+    One row per ``(HydroYear, Month)``, summing ``Vol_MAF``/``Vol_BCM`` across
+    every row that falls in it. Each row already carries the correct
+    day-count-scaled volume via :func:`enrich`, so this is correct for daily and
+    10-daily input alike. Mirrors the source's ``monthly_vol`` grouping.
+    """
+    return (
+        hydro.groupby([COL_HYDRO_YEAR, COL_MONTH, COL_MONTH_NUM])[
+            [COL_VOL_MAF, COL_VOL_BCM]
+        ]
+        .sum()
+        .reset_index()
+        .sort_values([COL_HYDRO_YEAR, COL_MONTH_NUM])
+        .reset_index(drop=True)
+    )
+
+
+def hydro_seasonal_volumes(hydro: pd.DataFrame) -> dict[str, pd.DataFrame]:
+    """Per-hydrological-year cropping-seasonal and annual total volumes.
+
+    Keyed ``Early_Kharif``/``Late_Kharif``/``Kharif``/``Rabi``/``Annual``
+    (mirrors the source's ``season_dfs``); each value is a frame indexed by
+    ``HydroYear`` with summed ``Vol_MAF``/``Vol_BCM``. ``Kharif`` is Early +
+    Late Kharif combined; ``Annual`` is every season combined. For the
+    calendar-based meteorological seasons instead, see
+    :func:`met_seasonal_volumes`.
+    """
+    return {
+        name: hydro[hydro[COL_SEASON].isin(members)]
+        .groupby(COL_HYDRO_YEAR)[[COL_VOL_MAF, COL_VOL_BCM]]
+        .sum()
+        for name, members in _HYDRO_SEASON_MEMBERSHIP.items()
+    }
+
+
+def met_seasonal_volumes(hydro: pd.DataFrame) -> dict[str, pd.DataFrame]:
+    """Per-meteorological-year total volume for each meteorological season.
+
+    Keyed ``Winter``/``Spring``/``Summer``/``Monsoon``/``Autumn``
+    (:class:`~hydrotrends.core.constants.MetSeason`); each value is a frame
+    indexed by a **meteorological year** with summed ``Vol_MAF``/``Vol_BCM``.
+
+    Winter (Dec + Jan + Feb) spans a calendar-year boundary, so it's labelled
+    by the year its Jan/Feb fall in — December 2019 counts toward
+    "Winter 2020" — the standard climatological convention. That triple
+    always falls entirely inside one hydrological-year block (Dec is the 9th
+    hydro-month, Jan/Feb the 10th/11th), so it is never split at the edges of
+    ``hydro`` the way a plain calendar-year grouping would be. The other four
+    seasons don't cross a year boundary and use the plain calendar year;
+    Spring (Mar + Apr) does straddle a *hydrological*-year boundary, so its
+    first/last occurrence in the record can be partial if either neighbouring
+    hydro year was dropped as incomplete.
+    """
+    met_year = np.where(
+        hydro[COL_MONTH_NUM] == _DECEMBER, hydro[COL_YEAR] + 1, hydro[COL_YEAR]
+    )
+    working = hydro.assign(_MetYear=met_year)
+    return {
+        season: working[working[COL_MET_SEASON] == season]
+        .groupby("_MetYear")[[COL_VOL_MAF, COL_VOL_BCM]]
+        .sum()
+        for season in _MET_SEASON_ORDER
+    }
