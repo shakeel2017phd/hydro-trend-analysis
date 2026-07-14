@@ -82,6 +82,7 @@ from .stats.changepoint import (
     pettitt_test,
 )
 from .stats.descriptive import DescriptiveStats, describe, describe_by
+from .stats.extended_descriptive import ExtendedDescriptiveStats, describe_extended
 from .stats.frequency import (
     exceedance_counts,
     exceedance_probability,
@@ -136,6 +137,8 @@ __all__ = [
     "describe_hydro_seasonal_volumes",
     "describe_met_seasonal_volumes",
     "DescriptiveStats",
+    "describe_extended",
+    "ExtendedDescriptiveStats",
     # trends
     "mann_kendall",
     "mann_kendall_modified",

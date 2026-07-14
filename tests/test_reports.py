@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+import numpy as np
 import pandas as pd
 from openpyxl import Workbook
 from openpyxl.worksheet.worksheet import Worksheet
 
 from hydrotrends.core.utils import hydro_year_label, met_year_label
+from hydrotrends.stats.extended_descriptive import describe_extended_by
 from hydrotrends.viz.reports import (
+    EXTENDED_STATS_COLUMNS,
     write_annual_data_sheet,
+    write_extended_stats_sheet,
     write_monthly_data_sheet,
     write_period_data_sheet,
     write_seasonal_data_sheet,
@@ -179,3 +183,59 @@ def test_write_annual_data_sheet_highlight_cols():
     pct_cell = ws.cell(row=4, column=4)
     assert red_cell.fill.fgColor.rgb.endswith("FFC7CE")
     assert pct_cell.fill.fgColor.rgb.endswith("FFE0E0")
+
+
+def _flow_by_year_period():
+    rng = np.random.default_rng(1)
+    years = list(range(2000, 2010))
+    periods = ["Apr-01", "Apr-02", "May-01"]
+    rows = [
+        {"Year": y, "Period": p, "Flow": rng.uniform(100, 500)}
+        for y in years
+        for p in periods
+    ]
+    return pd.DataFrame(rows), years, periods
+
+
+def test_write_extended_stats_sheet_horizontal_by_year():
+    df, years, periods = _flow_by_year_period()
+    horiz = describe_extended_by(
+        df, value_col="Flow", by="Year", expected_n=len(periods)
+    )
+    wb, ws = _sheet()
+    write_extended_stats_sheet(
+        ws, horiz, title="Horizontal test", index_label="Year", unit="Cusecs"
+    )
+    assert ws["A1"].value == "Horizontal test"
+    assert ws["A2"].value == "Year  [Cusecs]"
+    headers = [h for _f, h in EXTENDED_STATS_COLUMNS]
+    assert ws.cell(row=2, column=2).value == headers[0] == "N"
+    assert ws.cell(row=2, column=2 + len(headers) - 1).value == headers[-1]
+    assert ws["A3"].value == "2000"
+    n_col = 2  # "N" is the first stat column
+    assert ws.cell(row=3, column=n_col).value == len(periods)
+    completeness_col = 2 + [f for f, _h in EXTENDED_STATS_COLUMNS].index(
+        "completeness_pct"
+    )
+    assert ws.cell(row=3, column=completeness_col).value == 100.0
+
+
+def test_write_extended_stats_sheet_vertical_by_period_with_last_n():
+    df, years, periods = _flow_by_year_period()
+    vert = describe_extended_by(
+        df,
+        value_col="Flow",
+        by="Period",
+        sort_col="Year",
+        expected_n=len(years),
+        last_n_window=5,
+    )
+    wb, ws = _sheet()
+    write_extended_stats_sheet(
+        ws, vert, title="Vertical test", index_label="Period", unit="Cusecs"
+    )
+    assert ws["A3"].value in periods
+    last_n_col = 2 + [f for f, _h in EXTENDED_STATS_COLUMNS].index("last_n_mean")
+    # every period has a full 10-year record, so last-5-years mean is populated
+    # (Cusecs renders as a whole number, matching every other flow-unit column)
+    assert ws.cell(row=3, column=last_n_col).value != ""

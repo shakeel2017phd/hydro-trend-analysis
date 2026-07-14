@@ -31,6 +31,7 @@ from openpyxl.worksheet.worksheet import Worksheet
 
 from ..core.constants import FULL_MONTHS
 from ..stats.descriptive import describe
+from ..stats.extended_descriptive import EXTENDED_STATS_COLUMNS
 
 __all__ = [
     "ColumnKind",
@@ -43,6 +44,7 @@ __all__ = [
     "write_monthly_data_sheet",
     "write_seasonal_data_sheet",
     "write_annual_data_sheet",
+    "write_extended_stats_sheet",
     "CoverRow",
     "DEFAULT_COVER_ROWS",
     "write_cover_sheet",
@@ -785,6 +787,78 @@ def write_annual_data_sheet(
 
     ws.freeze_panes = "B4"
     widths = [14.0] + [14.0] * n_cols
+    for i, width in enumerate(widths, 1):
+        ws.column_dimensions[get_column_letter(i)].width = width
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Descriptive Statistics Summary sheet (Phase 3: the full extended-stats set)
+# ─────────────────────────────────────────────────────────────────────────────
+_EXT_INT_FIELDS = {"n", "missing", "no_flow_count", "negative_count"}
+_EXT_PCT_FIELDS = {"completeness_pct", "cv_pct"}
+_EXT_RATIO_FIELDS = {
+    "skewness",
+    "kurtosis",
+    "pearson_skew",
+    "bowley_skew",
+    "l_skewness",
+    "shapiro_stat",
+    "shapiro_p",
+    "anderson_stat",
+}
+
+
+def _extended_fmt(field: str, value: Any, unit: str) -> tuple[Any, str | None]:
+    """(cell value, number format) for one Descriptive Statistics Summary field."""
+    if value is None or (isinstance(value, float) and math.isnan(value)):
+        return "", None
+    if field in _EXT_INT_FIELDS:
+        return int(round(float(value))), "0"
+    v = float(value)
+    if field in _EXT_PCT_FIELDS or field in _EXT_RATIO_FIELDS:
+        return round(v, 3), "0.000"
+    if unit == "Cusecs":
+        return int(round(v)), "0"
+    return round(v, 2), "0.00"
+
+
+def write_extended_stats_sheet(
+    ws: Worksheet,
+    stats: pd.DataFrame,
+    *,
+    title: str,
+    index_label: str = "Period",
+    unit: str = "",
+    label_fn: Callable[[Any], str] | None = None,
+) -> None:
+    """Write a Descriptive Statistics Summary table.
+
+    One row per index key (a year for a Horizontal summary, a period for a
+    Vertical one -- see
+    :func:`~hydrotrends.stats.extended_descriptive.describe_extended_by`), one
+    column per
+    :data:`~hydrotrends.stats.extended_descriptive.EXTENDED_STATS_COLUMNS`
+    field.
+    """
+    ws.sheet_view.showGridLines = False
+    total_cols = 1 + len(EXTENDED_STATS_COLUMNS)
+    _merged_header(ws, 1, 1, total_cols, title, bg=_HDR, size=12)
+
+    _header(ws, 2, 1, f"{index_label}  [{unit}]", bg=_SUB, size=9)
+    for j, (_field, header) in enumerate(EXTENDED_STATS_COLUMNS, start=2):
+        _header(ws, 2, j, header, bg=_SUB, size=9)
+
+    for i, (idx, row) in enumerate(stats.iterrows()):
+        r = 3 + i
+        row_bg = _ALT if i % 2 == 0 else _WHT
+        label = label_fn(idx) if label_fn else str(idx)
+        _cell(ws, r, 1, label, bg=row_bg, bold=True, align="left")
+        for j, (field, _header_text) in enumerate(EXTENDED_STATS_COLUMNS, start=2):
+            v, fmt = _extended_fmt(field, row.get(field, math.nan), unit)
+            _cell(ws, r, j, v, bg=row_bg, number_format=fmt)
+
+    ws.freeze_panes = "B3"
+    widths = [15.0] + [11.0] * len(EXTENDED_STATS_COLUMNS)
     for i, width in enumerate(widths, 1):
         ws.column_dimensions[get_column_letter(i)].width = width
 
