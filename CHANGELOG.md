@@ -51,6 +51,23 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   script's `write_period_data_sheet`/`write_monthly_data_sheet`/
   `write_seasonal_data_sheet`/`write_annual_data_sheet`, extended to also
   cover the meteorological-year framing the source script doesn't have).
+- `hydrotrends.describe_extended`/`ExtendedDescriptiveStats`: a ~38-field
+  Descriptive Statistics Summary beyond `describe`'s 15 -- Data Quality
+  (N/Missing/NF no-flow count/NNeg negative count/Record Completeness),
+  Central Tendency (Mean/Median/Mode/Geometric Mean/Harmonic Mean),
+  Dispersion (Std Dev/Variance/CV/IQR/Range/MAD), Estimation Uncertainty
+  (Standard Error/95% normal-theory CI), Extremes (Min/Max/Last-5-Years
+  Mean), Quantiles (P10/25/75/90), Distribution Shape (Skewness/Kurtosis/
+  Pearson's 2nd/Bowley's/L-Skewness/Shapiro-Wilk/Anderson-Darling), Flow
+  Duration (Q90/95/99 exceedance flows), and Totals. An addition beyond the
+  source script; kept in its own module so `describe`'s v26-parity-tested
+  numbers are untouched.
+- `generate_report` writes Horizontal (one row per year, across that year's
+  periods) and Vertical (one row per period, across years) Descriptive
+  Statistics Summary sheets -- `{Daily,10Daily,Monthly,Hydro_Season,
+  Met_Season}_Summary_{H,V}_{unit}` plus a single across-years
+  `Annual_Summary_{unit}` (annual volume has no within-year sub-period to
+  summarise Horizontally) -- for every scale, Hydro-Year framed.
 
 ### Removed
 - The `Descriptive (...)`/`Monthly Descriptive (...)`/`Hydro Season
@@ -67,6 +84,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Jan/Feb/Mar). Trend-test results were unaffected — `Year` and `HydroYear`
   differ by the same constant offset for every row of a given period, so sort
   order (and therefore every trend test) was already identical either way.
+- `viz.reports`'s cell-styling helper now reuses cached `Font`/`PatternFill`
+  objects for a repeated (background, bold, size, color) combination instead
+  of constructing a fresh, value-equal instance per cell. Cuts `generate_report`
+  time roughly in half on a multi-decade daily record (~50s -> ~24s in a
+  30-year synthetic benchmark) -- openpyxl deduplicates every style object it's
+  handed against a workbook-wide registry, and doing that from scratch for
+  thousands of value-equal-but-distinct objects was the dominant cost.
 
 ### Scope note
 `hydrotrends` now has parity-tested statistical coverage (see above) for

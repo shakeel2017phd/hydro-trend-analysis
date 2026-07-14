@@ -61,6 +61,13 @@ hydro-trend analyze inflow.csv --value-column inflow_cusec -o ./outputs
   annual total-volume aggregates. A CLI run writes one Excel workbook per
   flow/volume unit pairing (Cusecs+MAF, Cumecs+BCM), matching the reference
   script's two-workbook deliverable.
+- **Beyond the reference script**: a ~38-field Descriptive Statistics Summary
+  (`hydrotrends.describe_extended`) — Data Quality, Central Tendency
+  (incl. Geometric/Harmonic Mean), Dispersion, Estimation Uncertainty (95% CI),
+  Extremes, Quantiles, Distribution Shape (incl. Shapiro-Wilk/Anderson-Darling
+  normality diagnostics), Flow Duration, and Totals — written as Horizontal
+  (across periods within a year) and Vertical (across years for a period)
+  summary sheets for every scale.
 - **Not yet ported**: the reference script's full visualization suite (per
   calendar-month box-whisker/histogram/violin grids, decadal blocks,
   flood-exceedance overlays, across all five aggregation scales).

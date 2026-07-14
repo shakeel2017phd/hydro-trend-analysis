@@ -19,6 +19,7 @@ import math
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
+from functools import cache
 from pathlib import Path
 from typing import Any, NamedTuple
 
@@ -224,17 +225,33 @@ def _smart_fmt(value: Any, key: str, unit: str) -> tuple[Any, str | None]:
 
 
 # ── low-level styling ─────────────────────────────────────────────────────────
-def _center() -> Alignment:
-    return Alignment(horizontal="center", vertical="center", wrap_text=True)
+# Style objects are immutable and reused across thousands of cells, so they're
+# cached/pre-built rather than constructed fresh per cell: openpyxl dedupes
+# every Font/Fill/Border/Alignment it's given against a workbook-wide style
+# registry, and doing that from scratch for value-equal-but-distinct objects
+# is what made write_period_data_sheet/write_extended_stats_sheet quadratic on
+# a multi-decade daily record (profiled: ~100s+ on a 30-year input, almost
+# entirely inside openpyxl's own style-registry bookkeeping, not this
+# package's code) -- reusing the same object instance for a repeated
+# (bg, bold, size, color) combination avoids re-registering it.
+_ALIGN_CENTER = Alignment(horizontal="center", vertical="center", wrap_text=True)
+_ALIGN_LEFT = Alignment(horizontal="left", vertical="center")
+_BORDER = Border(
+    left=Side(style="thin"),
+    right=Side(style="thin"),
+    top=Side(style="thin"),
+    bottom=Side(style="thin"),
+)
 
 
-def _left() -> Alignment:
-    return Alignment(horizontal="left", vertical="center")
+@cache
+def _font(bold: bool, size: int, color: str) -> Font:
+    return Font(name=_FONT, bold=bold, size=size, color=color)
 
 
-def _border() -> Border:
-    edge = Side(style="thin")
-    return Border(left=edge, right=edge, top=edge, bottom=edge)
+@cache
+def _fill(bg: str) -> PatternFill:
+    return PatternFill("solid", fgColor=bg)
 
 
 def _cell(
@@ -251,10 +268,10 @@ def _cell(
     color: str = "000000",
 ) -> Cell:
     cell = ws.cell(row=row, column=col, value=value)
-    cell.fill = PatternFill("solid", fgColor=bg)
-    cell.font = Font(name=_FONT, bold=bold, size=size, color=color)
-    cell.alignment = _center() if align == "center" else _left()
-    cell.border = _border()
+    cell.fill = _fill(bg)
+    cell.font = _font(bold, size, color)
+    cell.alignment = _ALIGN_CENTER if align == "center" else _ALIGN_LEFT
+    cell.border = _BORDER
     if number_format:
         cell.number_format = number_format
     return cell
