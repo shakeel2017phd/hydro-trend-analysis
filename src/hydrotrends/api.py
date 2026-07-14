@@ -40,6 +40,7 @@ from .core.constants import (
     CAL_MONTHS,
     COL_HYDRO_YEAR,
     COL_MET_YEAR,
+    COL_MONTH,
     COL_PERIOD,
     COL_YEAR,
     DEFAULT_ALPHA,
@@ -80,10 +81,13 @@ from .stats.trends import (
     sens_slope,
 )
 from .viz.reports import (
+    write_annual_data_sheet,
     write_cover_sheet,
     write_descriptive_sheet,
+    write_monthly_data_sheet,
     write_period_data_sheet,
     write_results_sheet,
+    write_seasonal_data_sheet,
 )
 
 __all__ = [
@@ -630,6 +634,128 @@ def _write_period_data_sheets(
         )
 
 
+_HYDRO_SEASON_COL_HEADERS: tuple[str, ...] = (
+    "Early Kharif",
+    "Late Kharif",
+    "Kharif",
+    "Rabi",
+    "Annual",
+)
+_HYDRO_SEASON_SUB_LABELS: tuple[str, ...] = (
+    "(Apr1–Jun10)",
+    "(Jun11–Sep30)",
+    "(Apr1–Sep30)",
+    "(Oct1–Mar31)",
+    "(Apr1–Mar31)",
+)
+_MET_SEASON_COL_HEADERS: tuple[str, ...] = (
+    "Winter",
+    "Spring",
+    "Summer",
+    "Monsoon",
+    "Autumn",
+    "Annual",
+)
+_MET_SEASON_SUB_LABELS: tuple[str, ...] = (
+    "(Dec–Feb)",
+    "(Mar–Apr)",
+    "(May–Jun)",
+    "(Jul–Sep)",
+    "(Oct–Nov)",
+    "(Dec–Nov)",
+)
+
+
+def _write_monthly_data_sheet(
+    wb: Workbook, pre: PreprocessedData, *, value_col: str, unit_label: str, title: str
+) -> None:
+    """Write ``Monthly_Data_{unit}``: monthly volume by hydrological year."""
+    pivot = (
+        monthly_volumes(pre.hydro)
+        .pivot_table(
+            index=COL_HYDRO_YEAR, columns=COL_MONTH, values=value_col, aggfunc="first"
+        )
+        .reindex(columns=HYDRO_MONTHS)
+    )
+    write_monthly_data_sheet(
+        wb.create_sheet(f"Monthly_Data_{unit_label}"),
+        pivot,
+        title=f"Monthly Inflow Volume ({unit_label}) - {title}",
+        month_order=list(HYDRO_MONTHS),
+        unit=unit_label,
+        label_fn=hydro_year_label,
+    )
+
+
+def _write_hydro_season_data_sheet(
+    wb: Workbook, pre: PreprocessedData, *, value_col: str, unit_label: str, title: str
+) -> None:
+    """Write ``Hydro_Season_Data_{unit}``: cropping-seasonal & annual volume."""
+    seasonal = hydro_seasonal_volumes(pre.hydro)
+    all_years = sorted(seasonal["Annual"].index)
+    data = {name: seasonal[name][value_col] for name in _HYDRO_SEASON_ORDER}
+    write_seasonal_data_sheet(
+        wb.create_sheet(f"Hydro_Season_Data_{unit_label}"),
+        data,
+        title=f"Hydro-Seasonal & Annual Inflow Volume ({unit_label}) - {title}",
+        col_headers=list(_HYDRO_SEASON_COL_HEADERS),
+        sub_labels=list(_HYDRO_SEASON_SUB_LABELS),
+        all_years=all_years,
+        col_keys=list(_HYDRO_SEASON_ORDER),
+        unit=unit_label,
+        label_fn=hydro_year_label,
+        row_label="Hydro Year",
+    )
+
+
+def _write_met_season_data_sheet(
+    wb: Workbook, pre: PreprocessedData, *, value_col: str, unit_label: str, title: str
+) -> None:
+    """Write ``Met_Season_Data_{unit}``: meteorological-seasonal & annual volume."""
+    met = met_seasonal_volumes(pre.hydro)
+    all_years = sorted(met["Annual"].index)
+    data = {name: met[name][value_col] for name in _MET_SEASON_ORDER}
+    write_seasonal_data_sheet(
+        wb.create_sheet(f"Met_Season_Data_{unit_label}"),
+        data,
+        title=f"Meteorological-Seasonal Inflow Volume ({unit_label}) - {title}",
+        col_headers=list(_MET_SEASON_COL_HEADERS),
+        sub_labels=list(_MET_SEASON_SUB_LABELS),
+        all_years=all_years,
+        col_keys=list(_MET_SEASON_ORDER),
+        unit=unit_label,
+        label_fn=met_year_label,
+        row_label="Met Year",
+    )
+
+
+def _write_annual_data_sheet(
+    wb: Workbook, pre: PreprocessedData, *, value_col: str, unit_label: str, title: str
+) -> None:
+    """Write ``Annual_Data_{unit}``: annual volume, anomaly, and 5-yr backward MA."""
+    ann = hydro_seasonal_volumes(pre.hydro)["Annual"][value_col].sort_index()
+    mean_vol = ann.mean()
+    ma5 = ann.rolling(MOVING_AVERAGE_WINDOW, min_periods=MOVING_AVERAGE_WINDOW).mean()
+    pct_col = "Anomaly\n(%)"
+    ann_df = pd.DataFrame(
+        {
+            f"Annual Vol\n({unit_label})": ann.round(2),
+            f"Anomaly\n({unit_label})": (ann - mean_vol).round(2),
+            pct_col: ((ann - mean_vol) / mean_vol * 100).round(2),
+            f"5-yr Bwd MA\n({unit_label})": ma5.round(2),
+        }
+    )
+    write_annual_data_sheet(
+        wb.create_sheet(f"Annual_Data_{unit_label}"),
+        ann_df,
+        title=f"Annual Inflow Volume by Hydrological Year - {title} [{unit_label}]",
+        data_cols=list(ann_df.columns),
+        label_fn=hydro_year_label,
+        highlight_cols=frozenset({pct_col}),
+        unit=unit_label,
+    )
+
+
 @dataclass(frozen=True)
 class ReportColumn:
     """One column to analyse in a report, with its display unit label.
@@ -788,6 +914,9 @@ def generate_report(
                 index_label="Monthly",
                 unit=vol_unit,
             )
+            _write_monthly_data_sheet(
+                wb, pre, value_col=rc.volume_column, unit_label=vol_unit, title=title
+            )
             if include_descriptive:
                 write_descriptive_sheet(
                     wb.create_sheet(f"Monthly Descriptive ({vol_unit})"),
@@ -810,6 +939,20 @@ def generate_report(
                     ),
                     index_label="Season",
                     unit=vol_unit,
+                )
+                _write_hydro_season_data_sheet(
+                    wb,
+                    pre,
+                    value_col=rc.volume_column,
+                    unit_label=vol_unit,
+                    title=title,
+                )
+                _write_annual_data_sheet(
+                    wb,
+                    pre,
+                    value_col=rc.volume_column,
+                    unit_label=vol_unit,
+                    title=title,
                 )
                 if include_descriptive:
                     write_descriptive_sheet(
@@ -838,6 +981,13 @@ def generate_report(
                     ),
                     index_label="Met Season",
                     unit=vol_unit,
+                )
+                _write_met_season_data_sheet(
+                    wb,
+                    pre,
+                    value_col=rc.volume_column,
+                    unit_label=vol_unit,
+                    title=title,
                 )
                 if include_descriptive:
                     write_descriptive_sheet(

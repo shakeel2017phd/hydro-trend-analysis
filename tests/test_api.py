@@ -285,13 +285,53 @@ def test_generate_report_writes_volume_sheets_when_paired(tmp_path):
     for name in (
         "Monthly_Trends_MAF",
         "Monthly Descriptive (MAF)",
+        "Monthly_Data_MAF",
         "Hydro_Season_Trends_MAF",
         "Hydro Season Descriptive (MAF)",
+        "Hydro_Season_Data_MAF",
+        "Annual_Data_MAF",
         "Met_Season_Trends_MAF",
         "Met Season Descriptive (MAF)",
+        "Met_Season_Data_MAF",
     ):
-        assert name in wb.sheetnames
+        assert name in wb.sheetnames, name
     assert wb["Monthly_Trends_MAF"].cell(4, 1).value == "Apr"
+
+    hs = wb["Hydro_Season_Data_MAF"]
+    assert hs.cell(2, 1).value == "Hydro Year"
+    assert [hs.cell(2, c).value for c in range(2, 7)] == [
+        "Early Kharif",
+        "Late Kharif",
+        "Kharif",
+        "Rabi",
+        "Annual",
+    ]
+    # Kharif = Early + Late Kharif; Annual = Kharif + Rabi (each cell is
+    # independently rounded to 2 dp for display, so allow that rounding slack).
+    early, late, kharif, rabi, annual = (hs.cell(4, c).value for c in range(2, 7))
+    assert math.isclose(kharif, early + late, abs_tol=0.02)
+    assert math.isclose(annual, kharif + rabi, abs_tol=0.02)
+
+    ms = wb["Met_Season_Data_MAF"]
+    assert ms.cell(2, 1).value == "Met Year"
+    assert [ms.cell(2, c).value for c in range(2, 8)] == [
+        "Winter",
+        "Spring",
+        "Summer",
+        "Monsoon",
+        "Autumn",
+        "Annual",
+    ]
+
+    ann = wb["Annual_Data_MAF"]
+    assert ann.cell(2, 1).value == "Hydro Year"
+    assert ann.cell(3, 1).value == "(YYYY-YY)"
+    assert [ann.cell(2, c).value for c in range(2, 6)] == [
+        "Annual Vol\n(MAF)",
+        "Anomaly\n(MAF)",
+        "Anomaly\n(%)",
+        "5-yr Bwd MA\n(MAF)",
+    ]
 
 
 def test_generate_report_omits_volume_sheets_without_pairing(daily_pre, tmp_path):
@@ -323,5 +363,9 @@ def test_generate_report_season_schemes_gating(tmp_path):
     )
     sheets = load_workbook(out).sheetnames
     assert "Hydro_Season_Trends_MAF" in sheets
+    assert "Hydro_Season_Data_MAF" in sheets
+    assert "Annual_Data_MAF" in sheets
     assert "Met_Season_Trends_MAF" not in sheets
+    assert "Met_Season_Data_MAF" not in sheets
     assert "Monthly_Trends_MAF" in sheets  # not gated by season_schemes
+    assert "Monthly_Data_MAF" in sheets  # not gated by season_schemes
