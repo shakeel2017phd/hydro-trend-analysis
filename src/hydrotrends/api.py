@@ -71,6 +71,7 @@ from .stats.changepoint import (
     pettitt_test,
 )
 from .stats.descriptive import describe, describe_by
+from .stats.extended_descriptive import describe_extended, describe_extended_by
 from .stats.ita import innovative_trend_analysis
 from .stats.trends import (
     linear_regression,
@@ -83,6 +84,7 @@ from .stats.trends import (
 from .viz.reports import (
     write_annual_data_sheet,
     write_cover_sheet,
+    write_extended_stats_sheet,
     write_monthly_data_sheet,
     write_period_data_sheet,
     write_results_sheet,
@@ -145,6 +147,7 @@ _MET_SEASON_LABELS: dict[str, str] = {
 }
 
 _MIN_FOR_TRENDS = 4  # matches the source's n < 4 guard
+_LAST_N_YEARS = 5  # "Last 5-Years Mean" window in the Descriptive Statistics Summary
 
 
 def _reindex_to_order(df: pd.DataFrame, order: Sequence[str]) -> pd.DataFrame:
@@ -755,6 +758,252 @@ def _write_annual_data_sheet(
     )
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Descriptive Statistics Summary sheets (Phase 3): Horizontal (one row per
+# year, across that year's periods) + Vertical (one row per period, across
+# years) full-field summaries. Always Hydro-Year framed -- unlike the raw Data
+# sheets, these aren't tripled across Cal/Hydro/Met Year, to keep the sheet
+# count bounded (see the Phase 3 commit message for the reasoning).
+# ─────────────────────────────────────────────────────────────────────────────
+def _write_period_stats_summary(
+    wb: Workbook,
+    frame: pd.DataFrame,
+    *,
+    sheet_tag: str,
+    period_order: Sequence[str],
+    value_col: str,
+    unit_label: str,
+    title: str,
+) -> None:
+    """Write ``{tag}_Summary_H_{unit}`` / ``{tag}_Summary_V_{unit}`` for a
+    Daily/10-Daily period frame (one row per Hydro Year x one column per
+    period, or vice versa).
+    """
+    horiz = describe_extended_by(
+        frame, value_col=value_col, by=COL_HYDRO_YEAR, expected_n=len(period_order)
+    )
+    write_extended_stats_sheet(
+        wb.create_sheet(f"{sheet_tag}_Summary_H_{unit_label}"),
+        horiz,
+        title=(
+            f"{sheet_tag} Descriptive Statistics Summary (Horizontal) - "
+            f"{title} [{unit_label}]"
+        ),
+        index_label="Hydro Year",
+        unit=unit_label,
+        label_fn=hydro_year_label,
+    )
+
+    n_years = int(frame[COL_HYDRO_YEAR].nunique())
+    vert = describe_extended_by(
+        frame,
+        value_col=value_col,
+        by=COL_PERIOD,
+        sort_col=COL_HYDRO_YEAR,
+        expected_n=n_years,
+        last_n_window=_LAST_N_YEARS,
+    )
+    vert = _reindex_to_order(vert, period_order)
+    write_extended_stats_sheet(
+        wb.create_sheet(f"{sheet_tag}_Summary_V_{unit_label}"),
+        vert,
+        title=(
+            f"{sheet_tag} Descriptive Statistics Summary (Vertical) - "
+            f"{title} [{unit_label}]"
+        ),
+        index_label=sheet_tag,
+        unit=unit_label,
+    )
+
+
+def _write_monthly_stats_summary(
+    wb: Workbook, pre: PreprocessedData, *, value_col: str, unit_label: str, title: str
+) -> None:
+    """Write ``Monthly_Summary_H_{unit}`` / ``Monthly_Summary_V_{unit}``."""
+    monthly = monthly_volumes(pre.hydro)
+    horiz = describe_extended_by(
+        monthly, value_col=value_col, by=COL_HYDRO_YEAR, expected_n=len(HYDRO_MONTHS)
+    )
+    write_extended_stats_sheet(
+        wb.create_sheet(f"Monthly_Summary_H_{unit_label}"),
+        horiz,
+        title=(
+            f"Monthly Descriptive Statistics Summary (Horizontal) - "
+            f"{title} [{unit_label}]"
+        ),
+        index_label="Hydro Year",
+        unit=unit_label,
+        label_fn=hydro_year_label,
+    )
+
+    n_years = int(monthly[COL_HYDRO_YEAR].nunique())
+    vert = describe_extended_by(
+        monthly,
+        value_col=value_col,
+        by=COL_MONTH,
+        sort_col=COL_HYDRO_YEAR,
+        expected_n=n_years,
+        last_n_window=_LAST_N_YEARS,
+    )
+    vert = _reindex_to_order(vert, HYDRO_MONTHS)
+    write_extended_stats_sheet(
+        wb.create_sheet(f"Monthly_Summary_V_{unit_label}"),
+        vert,
+        title=(
+            f"Monthly Descriptive Statistics Summary (Vertical) - "
+            f"{title} [{unit_label}]"
+        ),
+        index_label="Month",
+        unit=unit_label,
+    )
+
+
+def _seasonal_long_frame(
+    seasonal: dict[str, pd.DataFrame],
+    order: Sequence[str],
+    *,
+    year_col: str,
+    value_col: str,
+) -> pd.DataFrame:
+    """Tidy ``(year_col, "Season", value_col)`` frame from a per-season dict
+    of year-indexed frames (as returned by ``hydro_seasonal_volumes``/
+    ``met_seasonal_volumes``) -- lets the season scales reuse
+    :func:`~hydrotrends.stats.extended_descriptive.describe_extended_by` the
+    same way the Monthly scale does.
+    """
+    parts = [
+        pd.DataFrame(
+            {
+                year_col: seasonal[name].index,
+                "Season": name,
+                value_col: seasonal[name][value_col].to_numpy(),
+            }
+        )
+        for name in order
+    ]
+    return pd.concat(parts, ignore_index=True)
+
+
+def _write_hydro_season_stats_summary(
+    wb: Workbook, pre: PreprocessedData, *, value_col: str, unit_label: str, title: str
+) -> None:
+    """Write ``Hydro_Season_Summary_H_{unit}`` / ``Hydro_Season_Summary_V_{unit}``."""
+    long = _seasonal_long_frame(
+        hydro_seasonal_volumes(pre.hydro),
+        _HYDRO_SEASON_ORDER,
+        year_col=COL_HYDRO_YEAR,
+        value_col=value_col,
+    )
+    horiz = describe_extended_by(
+        long,
+        value_col=value_col,
+        by=COL_HYDRO_YEAR,
+        expected_n=len(_HYDRO_SEASON_ORDER),
+    )
+    write_extended_stats_sheet(
+        wb.create_sheet(f"Hydro_Season_Summary_H_{unit_label}"),
+        horiz,
+        title=(
+            f"Hydro-Season Descriptive Statistics Summary (Horizontal) - "
+            f"{title} [{unit_label}]"
+        ),
+        index_label="Hydro Year",
+        unit=unit_label,
+        label_fn=hydro_year_label,
+    )
+
+    n_years = int(long[COL_HYDRO_YEAR].nunique())
+    vert = describe_extended_by(
+        long,
+        value_col=value_col,
+        by="Season",
+        sort_col=COL_HYDRO_YEAR,
+        expected_n=n_years,
+        last_n_window=_LAST_N_YEARS,
+    )
+    vert = _reindex_to_order(vert, _HYDRO_SEASON_ORDER)
+    write_extended_stats_sheet(
+        wb.create_sheet(f"Hydro_Season_Summary_V_{unit_label}"),
+        vert,
+        title=(
+            f"Hydro-Season Descriptive Statistics Summary (Vertical) - "
+            f"{title} [{unit_label}]"
+        ),
+        index_label="Season",
+        unit=unit_label,
+    )
+
+
+def _write_met_season_stats_summary(
+    wb: Workbook, pre: PreprocessedData, *, value_col: str, unit_label: str, title: str
+) -> None:
+    """Write ``Met_Season_Summary_H_{unit}`` / ``Met_Season_Summary_V_{unit}``."""
+    long = _seasonal_long_frame(
+        met_seasonal_volumes(pre.hydro),
+        _MET_SEASON_ORDER,
+        year_col=COL_MET_YEAR,
+        value_col=value_col,
+    )
+    horiz = describe_extended_by(
+        long, value_col=value_col, by=COL_MET_YEAR, expected_n=len(_MET_SEASON_ORDER)
+    )
+    write_extended_stats_sheet(
+        wb.create_sheet(f"Met_Season_Summary_H_{unit_label}"),
+        horiz,
+        title=(
+            f"Met-Season Descriptive Statistics Summary (Horizontal) - "
+            f"{title} [{unit_label}]"
+        ),
+        index_label="Met Year",
+        unit=unit_label,
+        label_fn=met_year_label,
+    )
+
+    n_years = int(long[COL_MET_YEAR].nunique())
+    vert = describe_extended_by(
+        long,
+        value_col=value_col,
+        by="Season",
+        sort_col=COL_MET_YEAR,
+        expected_n=n_years,
+        last_n_window=_LAST_N_YEARS,
+    )
+    vert = _reindex_to_order(vert, _MET_SEASON_ORDER)
+    write_extended_stats_sheet(
+        wb.create_sheet(f"Met_Season_Summary_V_{unit_label}"),
+        vert,
+        title=(
+            f"Met-Season Descriptive Statistics Summary (Vertical) - "
+            f"{title} [{unit_label}]"
+        ),
+        index_label="Season",
+        unit=unit_label,
+    )
+
+
+def _write_annual_stats_summary(
+    wb: Workbook, pre: PreprocessedData, *, value_col: str, unit_label: str, title: str
+) -> None:
+    """Write ``Annual_Summary_{unit}``.
+
+    Annual volume has no within-year sub-periods to summarise, so there's no
+    Horizontal counterpart here -- just the across-years (Vertical) summary,
+    as a single-row table.
+    """
+    ann = hydro_seasonal_volumes(pre.hydro)["Annual"][value_col].sort_index()
+    stats = describe_extended(
+        ann.to_numpy(), expected_n=int(ann.size), last_n_window=_LAST_N_YEARS
+    )
+    table = pd.DataFrame([stats.to_dict()], index=["All Years"])
+    write_extended_stats_sheet(
+        wb.create_sheet(f"Annual_Summary_{unit_label}"),
+        table,
+        title=f"Annual Descriptive Statistics Summary - {title} [{unit_label}]",
+        index_label="Hydro Year",
+        unit=unit_label,
+    )
+
+
 @dataclass(frozen=True)
 class ReportColumn:
     """One column to analyse in a report, with its display unit label.
@@ -869,6 +1118,29 @@ def generate_report(
                 abbreviate_sheet_key=True,
             )
 
+        # Descriptive Statistics Summary (Horizontal + Vertical), Hydro-Year
+        # framed -- see _write_period_stats_summary's docstring for why this
+        # isn't tripled across Cal/Hydro/Met Year the way Data sheets are.
+        _write_period_stats_summary(
+            wb,
+            pre.hydro,
+            sheet_tag="Daily" if is_daily else "10Daily_Mean",
+            period_order=list(RESOLUTION_INFO[pre.resolution].hydro_periods),
+            value_col=rc.column,
+            unit_label=rc.unit_label,
+            title=title,
+        )
+        if is_daily:
+            _write_period_stats_summary(
+                wb,
+                dekads_from_daily(pre.hydro),
+                sheet_tag="10Daily_Mean",
+                period_order=list(HYDRO_DEKADS),
+                value_col=rc.column,
+                unit_label=rc.unit_label,
+                title=title,
+            )
+
         if rc.volume_column is not None:
             vol_unit = rc.volume_unit_label or ""
             _write_period_data_sheets(
@@ -890,6 +1162,25 @@ def generate_report(
                     unit_label=vol_unit,
                     title=title,
                 )
+            _write_period_stats_summary(
+                wb,
+                pre.hydro,
+                sheet_tag=primary_label,
+                period_order=list(RESOLUTION_INFO[pre.resolution].hydro_periods),
+                value_col=rc.volume_column,
+                unit_label=vol_unit,
+                title=title,
+            )
+            if is_daily:
+                _write_period_stats_summary(
+                    wb,
+                    dekads_from_daily(pre.hydro),
+                    sheet_tag="10Daily",
+                    period_order=list(HYDRO_DEKADS),
+                    value_col=rc.volume_column,
+                    unit_label=vol_unit,
+                    title=title,
+                )
             monthly_trend = analyze_monthly_volumes(
                 pre.hydro, value_col=rc.volume_column, alpha=alpha
             )
@@ -901,6 +1192,9 @@ def generate_report(
                 unit=vol_unit,
             )
             _write_monthly_data_sheet(
+                wb, pre, value_col=rc.volume_column, unit_label=vol_unit, title=title
+            )
+            _write_monthly_stats_summary(
                 wb, pre, value_col=rc.volume_column, unit_label=vol_unit, title=title
             )
 
@@ -932,6 +1226,20 @@ def generate_report(
                     unit_label=vol_unit,
                     title=title,
                 )
+                _write_hydro_season_stats_summary(
+                    wb,
+                    pre,
+                    value_col=rc.volume_column,
+                    unit_label=vol_unit,
+                    title=title,
+                )
+                _write_annual_stats_summary(
+                    wb,
+                    pre,
+                    value_col=rc.volume_column,
+                    unit_label=vol_unit,
+                    title=title,
+                )
 
             if include_meteorological:
                 met_trend = analyze_met_seasonal_volumes(
@@ -948,6 +1256,13 @@ def generate_report(
                     unit=vol_unit,
                 )
                 _write_met_season_data_sheet(
+                    wb,
+                    pre,
+                    value_col=rc.volume_column,
+                    unit_label=vol_unit,
+                    title=title,
+                )
+                _write_met_season_stats_summary(
                     wb,
                     pre,
                     value_col=rc.volume_column,

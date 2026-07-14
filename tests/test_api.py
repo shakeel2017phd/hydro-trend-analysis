@@ -186,6 +186,53 @@ def test_generate_report_writes_daily_and_10daily_data_sheets(daily_pre, tmp_pat
     assert "-" in met.cell(4, 1).value
 
 
+def test_generate_report_writes_descriptive_stats_summary_sheets(daily_pre, tmp_path):
+    out = ht.generate_report(
+        daily_pre,
+        tmp_path / "report.xlsx",
+        columns=[
+            ht.ReportColumn(
+                COL_FLOW_CUSECS,
+                "Cusecs",
+                volume_column=COL_VOL_MAF,
+                volume_unit_label="MAF",
+            )
+        ],
+        title="Test Report",
+    )
+    wb = load_workbook(out)
+    for name in (
+        "Daily_Summary_H_Cusecs",
+        "Daily_Summary_V_Cusecs",
+        "10Daily_Mean_Summary_H_Cusecs",
+        "10Daily_Mean_Summary_V_Cusecs",
+        "Daily_Summary_H_MAF",
+        "Daily_Summary_V_MAF",
+        "10Daily_Summary_H_MAF",
+        "10Daily_Summary_V_MAF",
+        "Monthly_Summary_H_MAF",
+        "Monthly_Summary_V_MAF",
+        "Hydro_Season_Summary_H_MAF",
+        "Hydro_Season_Summary_V_MAF",
+        "Met_Season_Summary_H_MAF",
+        "Met_Season_Summary_V_MAF",
+        "Annual_Summary_MAF",
+    ):
+        assert name in wb.sheetnames, name
+    assert all(len(name) <= 31 for name in wb.sheetnames)
+
+    horiz = wb["Daily_Summary_H_Cusecs"]
+    assert horiz.cell(2, 1).value == "Hydro Year  [Cusecs]"
+    assert horiz.cell(2, 2).value == "N"
+    assert "-" in horiz.cell(3, 1).value  # "YYYY-YY" hydro-year label
+
+    vert = wb["Daily_Summary_V_Cusecs"]
+    assert vert.cell(2, 1).value == "Daily  [Cusecs]"
+
+    ann = wb["Annual_Summary_MAF"]
+    assert ann.cell(3, 1).value == "All Years"
+
+
 def test_generate_report_10daily_input_has_no_daily_data_sheets(tendaily_pre, tmp_path):
     out = ht.generate_report(
         tendaily_pre,
@@ -195,9 +242,12 @@ def test_generate_report_10daily_input_has_no_daily_data_sheets(tendaily_pre, tm
     )
     wb = load_workbook(out)
     assert not any(name.startswith("Daily_Data_") for name in wb.sheetnames)
+    assert not any(name.startswith("Daily_Summary_") for name in wb.sheetnames)
     # abbreviated Cal/Hydro/Met Year key: "10Daily_Mean_Data_Hydro_Year_Cusecs"
     # would be 35 chars, over Excel's 31-char sheet-name limit.
     assert "10Daily_Mean_Data_HY_Cusecs" in wb.sheetnames
+    assert "10Daily_Mean_Summary_H_Cusecs" in wb.sheetnames
+    assert "10Daily_Mean_Summary_V_Cusecs" in wb.sheetnames
     assert all(len(name) <= 31 for name in wb.sheetnames)
 
 
@@ -363,7 +413,11 @@ def test_generate_report_season_schemes_gating(tmp_path):
     assert "Hydro_Season_Trends_MAF" in sheets
     assert "Hydro_Season_Data_MAF" in sheets
     assert "Annual_Data_MAF" in sheets
+    assert "Hydro_Season_Summary_H_MAF" in sheets
+    assert "Annual_Summary_MAF" in sheets
     assert "Met_Season_Trends_MAF" not in sheets
     assert "Met_Season_Data_MAF" not in sheets
+    assert "Met_Season_Summary_H_MAF" not in sheets
     assert "Monthly_Trends_MAF" in sheets  # not gated by season_schemes
     assert "Monthly_Data_MAF" in sheets  # not gated by season_schemes
+    assert "Monthly_Summary_H_MAF" in sheets  # not gated by season_schemes
