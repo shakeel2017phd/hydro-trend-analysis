@@ -202,14 +202,36 @@ def test_generate_report_writes_descriptive_stats_summary_sheets(daily_pre, tmp_
     )
     wb = load_workbook(out)
     for name in (
-        "Daily_Summary_H_Cusecs",
-        "Daily_Summary_V_Cusecs",
-        "10Daily_Mean_Summary_H_Cusecs",
-        "10Daily_Mean_Summary_V_Cusecs",
-        "Daily_Summary_H_MAF",
-        "Daily_Summary_V_MAF",
-        "10Daily_Summary_H_MAF",
-        "10Daily_Summary_V_MAF",
+        # Daily/10Daily Summary sheets are tripled across Cal/Hydro/Met Year
+        # (abbreviated CY/HY/MY -- see _write_period_stats_summary's docstring
+        # for why, same reasoning as the Data sheets' "10Daily_Mean_Data_HY_..."
+        # abbreviation), matching the Data sheets' framing options.
+        "Daily_Summ_H_CY_Cusecs",
+        "Daily_Summ_H_HY_Cusecs",
+        "Daily_Summ_H_MY_Cusecs",
+        "Daily_Summ_V_CY_Cusecs",
+        "Daily_Summ_V_HY_Cusecs",
+        "Daily_Summ_V_MY_Cusecs",
+        "10Daily_Mean_Summ_H_CY_Cusecs",
+        "10Daily_Mean_Summ_H_HY_Cusecs",
+        "10Daily_Mean_Summ_H_MY_Cusecs",
+        "10Daily_Mean_Summ_V_CY_Cusecs",
+        "10Daily_Mean_Summ_V_HY_Cusecs",
+        "10Daily_Mean_Summ_V_MY_Cusecs",
+        "Daily_Summ_H_CY_MAF",
+        "Daily_Summ_H_HY_MAF",
+        "Daily_Summ_H_MY_MAF",
+        "Daily_Summ_V_CY_MAF",
+        "Daily_Summ_V_HY_MAF",
+        "Daily_Summ_V_MY_MAF",
+        "10Daily_Summ_H_CY_MAF",
+        "10Daily_Summ_H_HY_MAF",
+        "10Daily_Summ_H_MY_MAF",
+        "10Daily_Summ_V_CY_MAF",
+        "10Daily_Summ_V_HY_MAF",
+        "10Daily_Summ_V_MY_MAF",
+        # Monthly/Hydro_Season/Met_Season/Annual stay single-framed, matching
+        # their Data-sheet counterparts (never tripled either).
         "Monthly_Summary_H_MAF",
         "Monthly_Summary_V_MAF",
         "Hydro_Season_Summary_H_MAF",
@@ -221,12 +243,19 @@ def test_generate_report_writes_descriptive_stats_summary_sheets(daily_pre, tmp_
         assert name in wb.sheetnames, name
     assert all(len(name) <= 31 for name in wb.sheetnames)
 
-    horiz = wb["Daily_Summary_H_Cusecs"]
+    horiz = wb["Daily_Summ_H_HY_Cusecs"]
     assert horiz.cell(2, 1).value == "Hydro Year  [Cusecs]"
     assert horiz.cell(2, 2).value == "N"
     assert "-" in horiz.cell(3, 1).value  # "YYYY-YY" hydro-year label
 
-    vert = wb["Daily_Summary_V_Cusecs"]
+    cal_horiz = wb["Daily_Summ_H_CY_Cusecs"]
+    assert cal_horiz.cell(2, 1).value == "Year  [Cusecs]"
+    assert cal_horiz.cell(3, 1).value.isdigit()  # plain calendar year
+
+    met_horiz = wb["Daily_Summ_H_MY_Cusecs"]
+    assert met_horiz.cell(2, 1).value == "Met Year  [Cusecs]"
+
+    vert = wb["Daily_Summ_V_HY_Cusecs"]
     assert vert.cell(2, 1).value == "Daily  [Cusecs]"
 
     ann = wb["Annual_Summary_MAF"]
@@ -242,12 +271,12 @@ def test_generate_report_10daily_input_has_no_daily_data_sheets(tendaily_pre, tm
     )
     wb = load_workbook(out)
     assert not any(name.startswith("Daily_Data_") for name in wb.sheetnames)
-    assert not any(name.startswith("Daily_Summary_") for name in wb.sheetnames)
+    assert not any(name.startswith("Daily_Summ_") for name in wb.sheetnames)
     # abbreviated Cal/Hydro/Met Year key: "10Daily_Mean_Data_Hydro_Year_Cusecs"
     # would be 35 chars, over Excel's 31-char sheet-name limit.
     assert "10Daily_Mean_Data_HY_Cusecs" in wb.sheetnames
-    assert "10Daily_Mean_Summary_H_Cusecs" in wb.sheetnames
-    assert "10Daily_Mean_Summary_V_Cusecs" in wb.sheetnames
+    assert "10Daily_Mean_Summ_H_HY_Cusecs" in wb.sheetnames
+    assert "10Daily_Mean_Summ_V_HY_Cusecs" in wb.sheetnames
     assert all(len(name) <= 31 for name in wb.sheetnames)
 
 

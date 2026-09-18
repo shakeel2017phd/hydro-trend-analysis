@@ -767,53 +767,64 @@ def _write_annual_data_sheet(
 # ─────────────────────────────────────────────────────────────────────────────
 def _write_period_stats_summary(
     wb: Workbook,
-    frame: pd.DataFrame,
+    framings: Sequence[_YearFraming],
     *,
     sheet_tag: str,
-    period_order: Sequence[str],
     value_col: str,
     unit_label: str,
     title: str,
 ) -> None:
-    """Write ``{tag}_Summary_H_{unit}`` / ``{tag}_Summary_V_{unit}`` for a
-    Daily/10-Daily period frame (one row per Hydro Year x one column per
-    period, or vice versa).
-    """
-    horiz = describe_extended_by(
-        frame, value_col=value_col, by=COL_HYDRO_YEAR, expected_n=len(period_order)
-    )
-    write_extended_stats_sheet(
-        wb.create_sheet(f"{sheet_tag}_Summary_H_{unit_label}"),
-        horiz,
-        title=(
-            f"{sheet_tag} Descriptive Statistics Summary (Horizontal) - "
-            f"{title} [{unit_label}]"
-        ),
-        index_label="Hydro Year",
-        unit=unit_label,
-        label_fn=hydro_year_label,
-    )
+    """Write ``{tag}_Summ_H_{key}_{unit}`` / ``{tag}_Summ_V_{key}_{unit}`` for
+    each Cal/Hydro/Met Year framing of a Daily/10-Daily period frame (one row
+    per year x one column per period, or vice versa).
 
-    n_years = int(frame[COL_HYDRO_YEAR].nunique())
-    vert = describe_extended_by(
-        frame,
-        value_col=value_col,
-        by=COL_PERIOD,
-        sort_col=COL_HYDRO_YEAR,
-        expected_n=n_years,
-        last_n_window=_LAST_N_YEARS,
-    )
-    vert = _reindex_to_order(vert, period_order)
-    write_extended_stats_sheet(
-        wb.create_sheet(f"{sheet_tag}_Summary_V_{unit_label}"),
-        vert,
-        title=(
-            f"{sheet_tag} Descriptive Statistics Summary (Vertical) - "
-            f"{title} [{unit_label}]"
-        ),
-        index_label=sheet_tag,
-        unit=unit_label,
-    )
+    Named ``_Summ_`` rather than ``_Summary_`` (unlike the untripled
+    Monthly/Hydro_Season/Met_Season/Annual summaries below, which keep the
+    full word): with a Cal/Hydro/Met Year key added, ``_Summary_`` would push
+    ``10Daily_Mean_..._Hydro_Year_Cusecs`` past Excel's 31-char sheet-name
+    limit even with the key abbreviated, so the key is *always* abbreviated
+    (CY/HY/MY) here to leave enough room.
+    """
+    for framing in framings:
+        horiz = describe_extended_by(
+            framing.frame,
+            value_col=value_col,
+            by=framing.year_col,
+            expected_n=len(framing.period_order),
+        )
+        key = _ABBREVIATED_FRAMING_KEY[framing.key]
+        write_extended_stats_sheet(
+            wb.create_sheet(f"{sheet_tag}_Summ_H_{key}_{unit_label}"),
+            horiz,
+            title=(
+                f"{sheet_tag} Descriptive Statistics Summary (Horizontal) - "
+                f"{title} [{framing.row_label}] [{unit_label}]"
+            ),
+            index_label=framing.row_label,
+            unit=unit_label,
+            label_fn=framing.label_fn,
+        )
+
+        n_years = int(framing.frame[framing.year_col].nunique())
+        vert = describe_extended_by(
+            framing.frame,
+            value_col=value_col,
+            by=COL_PERIOD,
+            sort_col=framing.year_col,
+            expected_n=n_years,
+            last_n_window=_LAST_N_YEARS,
+        )
+        vert = _reindex_to_order(vert, framing.period_order)
+        write_extended_stats_sheet(
+            wb.create_sheet(f"{sheet_tag}_Summ_V_{key}_{unit_label}"),
+            vert,
+            title=(
+                f"{sheet_tag} Descriptive Statistics Summary (Vertical) - "
+                f"{title} [{framing.row_label}] [{unit_label}]"
+            ),
+            index_label=sheet_tag,
+            unit=unit_label,
+        )
 
 
 def _write_monthly_stats_summary(
@@ -1118,14 +1129,12 @@ def generate_report(
                 abbreviate_sheet_key=True,
             )
 
-        # Descriptive Statistics Summary (Horizontal + Vertical), Hydro-Year
-        # framed -- see _write_period_stats_summary's docstring for why this
-        # isn't tripled across Cal/Hydro/Met Year the way Data sheets are.
+        # Descriptive Statistics Summary (Horizontal + Vertical), one per
+        # Cal/Hydro/Met Year framing -- same tripling as the raw Data sheets.
         _write_period_stats_summary(
             wb,
-            pre.hydro,
+            _year_framings(pre),
             sheet_tag="Daily" if is_daily else "10Daily_Mean",
-            period_order=list(RESOLUTION_INFO[pre.resolution].hydro_periods),
             value_col=rc.column,
             unit_label=rc.unit_label,
             title=title,
@@ -1133,9 +1142,8 @@ def generate_report(
         if is_daily:
             _write_period_stats_summary(
                 wb,
-                dekads_from_daily(pre.hydro),
+                _dekad_year_framings(pre),
                 sheet_tag="10Daily_Mean",
-                period_order=list(HYDRO_DEKADS),
                 value_col=rc.column,
                 unit_label=rc.unit_label,
                 title=title,
@@ -1164,9 +1172,8 @@ def generate_report(
                 )
             _write_period_stats_summary(
                 wb,
-                pre.hydro,
+                _year_framings(pre),
                 sheet_tag=primary_label,
-                period_order=list(RESOLUTION_INFO[pre.resolution].hydro_periods),
                 value_col=rc.volume_column,
                 unit_label=vol_unit,
                 title=title,
@@ -1174,9 +1181,8 @@ def generate_report(
             if is_daily:
                 _write_period_stats_summary(
                     wb,
-                    dekads_from_daily(pre.hydro),
+                    _dekad_year_framings(pre),
                     sheet_tag="10Daily",
-                    period_order=list(HYDRO_DEKADS),
                     value_col=rc.volume_column,
                     unit_label=vol_unit,
                     title=title,
