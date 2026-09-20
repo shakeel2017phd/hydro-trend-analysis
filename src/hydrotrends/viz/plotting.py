@@ -30,7 +30,6 @@ from ..core.validation import ArrayLike
 from ..stats.frequency import (
     COL_FDC_EXCEEDANCE,
     COL_FDC_VALUE,
-    exceedance_probability,
     flow_duration_curve,
 )
 from ..stats.ita import ITAResult
@@ -47,7 +46,12 @@ __all__ = [
     "parametric_bounds_plot",
     "robust_bounds_plot",
     "distribution_grid",
+    "boxwhisker_grid",
+    "single_histogram",
     "flood_heatmap",
+    "flood_heatmap_interactive",
+    "flood_overlay_static",
+    "flood_overlay_interactive",
 ]
 
 _LINE_COLOR = "#1f4e79"
@@ -225,12 +229,12 @@ def ita_scatter(
 _FDC_COLOR = "#1f4e79"
 
 
-def _flood_annotation(
-    label: str, threshold: float, data: pd.Series | np.ndarray
-) -> str:
-    """Flood-line label with the threshold and its exceedance probability (%)."""
-    exceed = exceedance_probability(data, threshold)
-    return f"{label} ({threshold:,.0f}) — {exceed:.1f}%"
+def _flood_annotation(label: str, threshold: float) -> str:
+    """Flood-line label with just the threshold -- the plain (Section-12,
+    all-5-scales) style. The Daily-only duration curve (Section 13) adds an
+    exceedance-probability readout instead; see :func:`daily_duration_curve_static`.
+    """
+    return f"{label} ({threshold:,.0f})"
 
 
 def flow_duration_curve_static(
@@ -245,7 +249,7 @@ def flow_duration_curve_static(
     """Static flow/volume duration curve (exceedance % on x, value on y).
 
     ``flood_limits`` maps a flood class to a threshold *in the data's unit*; each
-    is drawn as a horizontal line annotated with its exceedance probability.
+    is drawn as a horizontal line annotated with its threshold value.
     """
     curve = flow_duration_curve(data)
     fig = Figure(figsize=figsize)
@@ -262,7 +266,7 @@ def flow_duration_curve_static(
             color = FLOOD_COLORS.get(label, "gray")
             ax.axhline(threshold, linestyle=":", linewidth=1.3, color=color)
             ax.annotate(
-                _flood_annotation(label, threshold, data),
+                _flood_annotation(label, threshold),
                 xy=(98, threshold),
                 fontsize=8,
                 color=color,
@@ -306,7 +310,7 @@ def flow_duration_curve_interactive(
                 y=threshold,
                 line_dash="dot",
                 line_color=FLOOD_COLORS.get(label, "gray"),
-                annotation_text=_flood_annotation(label, threshold, data),
+                annotation_text=_flood_annotation(label, threshold),
                 annotation_position="right",
             )
     unit = f" ({unit_label})" if unit_label else ""
@@ -630,6 +634,7 @@ def distribution_grid(
     data_by_period: Mapping[object, ArrayLike],
     *,
     order: list[object] | None = None,
+    title: str | None = None,
     unit_label: str = "",
     ncols: int = 4,
     min_points: int = 3,
@@ -694,6 +699,112 @@ def distribution_grid(
 
     for j in range(n, len(axes)):  # blank any unused panels
         axes[j].axis("off")
+    if title:
+        fig.suptitle(title, fontsize=16, fontweight="bold", y=1.0)
+    fig.tight_layout()
+    return fig
+
+
+def boxwhisker_grid(
+    data_by_period: Mapping[object, ArrayLike],
+    *,
+    order: list[object] | None = None,
+    title: str | None = None,
+    unit_label: str = "",
+    ncols: int = 4,
+    min_points: int = 3,
+    panel_size: tuple[float, float] = (3.2, 4.0),
+    ylim: tuple[float, float] | None = None,
+) -> Figure:
+    """Box-and-whisker plot per period, arranged in a grid.
+
+    ``data_by_period``/``order``/``min_points`` mirror :func:`distribution_grid`.
+    ``ylim`` shares one y-axis range across every panel (the source's
+    ``global_ylim``, e.g. the whole scale's min/max +/-5%) so panels are
+    visually comparable; omit it to let each panel autoscale.
+    """
+    labels = order if order is not None else list(data_by_period)
+    n = len(labels)
+    ncols = max(1, ncols)
+    nrows = max(1, math.ceil(n / ncols))
+
+    fig = Figure(figsize=(panel_size[0] * ncols, panel_size[1] * nrows))
+    axes = np.asarray(fig.subplots(nrows, ncols, squeeze=False)).flatten()
+
+    unit = f" ({unit_label})" if unit_label else ""
+    for i, period in enumerate(labels):
+        ax = axes[i]
+        series = pd.Series(data_by_period.get(period, []), dtype="float64").dropna()
+        if len(series) >= min_points:
+            sns.boxplot(y=series, ax=ax, color="skyblue", width=0.5)
+            ax.set_title(str(period), fontsize=11, fontweight="bold")
+            ax.set_ylabel(f"Value{unit}", fontsize=8)
+            ax.set_xlabel("")
+            if ylim is not None:
+                ax.set_ylim(ylim)
+            ax.tick_params(labelbottom=False, labelsize=7)
+            ax.grid(True, alpha=0.3, axis="y")
+        else:
+            ax.set_title(f"{period} (insufficient data)", fontsize=10)
+            ax.axis("off")
+
+    for j in range(n, len(axes)):
+        axes[j].axis("off")
+    if title:
+        fig.suptitle(title, fontsize=16, fontweight="bold", y=1.0)
+    fig.tight_layout()
+    return fig
+
+
+def single_histogram(
+    series: ArrayLike,
+    *,
+    title: str | None = None,
+    unit_label: str = "",
+    figsize: tuple[float, float] = (8.0, 5.0),
+) -> Figure:
+    """Histogram + KDE for a scale with only one period per year (Annual).
+
+    Draws mean/median/+-std lines the same way :func:`distribution_grid`'s
+    per-panel does, at single-plot scale.
+    """
+    s = pd.Series(series, dtype="float64").dropna()
+    mean_val = float(s.mean())
+    median_val = float(s.median())
+    std_val = float(s.std(ddof=1))
+
+    fig = Figure(figsize=figsize)
+    ax = fig.subplots()
+    sns.histplot(s, kde=True, ax=ax, color="skyblue", stat="count", alpha=0.6)
+    ax.axvline(
+        mean_val,
+        color="red",
+        linestyle="--",
+        linewidth=1.5,
+        label=f"Mean: {mean_val:.2f}",
+    )
+    ax.axvline(
+        median_val,
+        color="purple",
+        linestyle="-",
+        linewidth=1.5,
+        label=f"Median: {median_val:.2f}",
+    )
+    ax.axvline(
+        mean_val - std_val,
+        color="green",
+        linestyle=":",
+        linewidth=1,
+        label="+/-Std Dev",
+    )
+    ax.axvline(mean_val + std_val, color="green", linestyle=":", linewidth=1)
+
+    unit = f" ({unit_label})" if unit_label else ""
+    ax.set_title(title or f"Distribution{unit}", fontweight="bold")
+    ax.set_xlabel(f"Value{unit}")
+    ax.set_ylabel("Count (Years)")
+    ax.legend(fontsize=9)
+    ax.grid(True, alpha=0.3)
     fig.tight_layout()
     return fig
 
@@ -740,4 +851,195 @@ def flood_heatmap(
         [str(pivot.columns[i]) for i in positions], rotation=90, fontsize=7
     )
     fig.tight_layout()
+    return fig
+
+
+def flood_heatmap_interactive(
+    counts: pd.DataFrame,
+    *,
+    flood_order: list[str] | None = None,
+    title: str = "Flood Exceedance Counts",
+    period_label: str = "Period",
+    height: int = 400,
+) -> go.Figure:
+    """Interactive Plotly counterpart to :func:`flood_heatmap`."""
+    if flood_order is None:
+        flood_order = [c for c in FLOOD_CLASSES if c in counts.columns]
+    melted = counts.reset_index(names=period_label).melt(
+        id_vars=period_label,
+        value_vars=flood_order,
+        var_name="Flood_Level",
+        value_name="Exceedances",
+    )
+    fig = px.density_heatmap(
+        melted,
+        x=period_label,
+        y="Flood_Level",
+        z="Exceedances",
+        title=title,
+        labels={"Exceedances": "Count"},
+        category_orders={"Flood_Level": flood_order},
+        color_continuous_scale=[
+            "white",
+            "lightblue",
+            "blue",
+            "orange",
+            "red",
+            "darkred",
+        ],
+        height=height,
+    )
+    fig.update_layout(xaxis={"tickangle": -90}, template=_TEMPLATE)
+    return fig
+
+
+def flood_overlay_static(
+    period_order: list[object],
+    mean_by_period: pd.Series,
+    recent_by_period: pd.Series,
+    recent_label: str,
+    q1_by_period: pd.Series,
+    q3_by_period: pd.Series,
+    *,
+    title: str | None = None,
+    unit_label: str = "",
+    flood_limits: Mapping[str, float] | None = None,
+) -> Figure:
+    """Historical mean/IQR band + a recent year's series, with flood-limit lines.
+
+    ``mean_by_period``/``q1_by_period``/``q3_by_period``/``recent_by_period``
+    are all indexed by period label (reindexed to ``period_order`` here);
+    build them from the raw per-period values before calling.
+    """
+    n = len(period_order)
+    fig_width = min(22.0, max(12.0, n * 0.12))
+    fig = Figure(figsize=(fig_width, 6.0))
+    ax = fig.subplots()
+    x = np.arange(n)
+
+    ax.fill_between(
+        x,
+        q1_by_period.reindex(period_order),
+        q3_by_period.reindex(period_order),
+        color="steelblue",
+        alpha=0.15,
+        label="Q1-Q3 Range",
+    )
+    ax.plot(
+        x,
+        mean_by_period.reindex(period_order),
+        color="navy",
+        linewidth=2.5,
+        label="Historical Mean",
+    )
+    ax.plot(
+        x,
+        recent_by_period.reindex(period_order),
+        color="red",
+        linewidth=2,
+        label=f"Recent Year ({recent_label})",
+    )
+    if flood_limits:
+        for label, threshold in flood_limits.items():
+            color = FLOOD_COLORS.get(label, "gray")
+            ax.axhline(threshold, linestyle=":", linewidth=1.2, color=color)
+            ax.annotate(
+                _flood_annotation(label, threshold),
+                xy=(n - 1, threshold),
+                xytext=(5, 0),
+                textcoords="offset points",
+                fontsize=8,
+                color=color,
+                ha="left",
+                va="center",
+            )
+
+    tick_step = max(1, n // 60)
+    ax.set_xticks(x[::tick_step])
+    ax.set_xticklabels(
+        [str(period_order[i]) for i in x[::tick_step]], rotation=90, fontsize=7
+    )
+    unit = f" ({unit_label})" if unit_label else ""
+    ax.set_title(title or f"Mean Inflow with Flood Limits{unit}", fontweight="bold")
+    ax.set_ylabel(f"Inflow{unit}")
+    ax.legend(loc="upper right", fontsize=8)
+    ax.grid(True, alpha=0.3)
+    fig.tight_layout()
+    return fig
+
+
+def flood_overlay_interactive(
+    period_order: list[object],
+    mean_by_period: pd.Series,
+    recent_by_period: pd.Series,
+    recent_label: str,
+    q1_by_period: pd.Series,
+    q3_by_period: pd.Series,
+    *,
+    title: str | None = None,
+    unit_label: str = "",
+    period_label: str = "Period",
+    flood_limits: Mapping[str, float] | None = None,
+) -> go.Figure:
+    """Interactive Plotly counterpart to :func:`flood_overlay_static`."""
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=period_order,
+            y=q3_by_period.reindex(period_order),
+            mode="lines",
+            line={"width": 0},
+            showlegend=False,
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=period_order,
+            y=q1_by_period.reindex(period_order),
+            mode="lines",
+            name="Q1-Q3 Range",
+            fill="tonexty",
+            fillcolor="rgba(0,100,255,0.15)",
+            line={"width": 0},
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=period_order,
+            y=mean_by_period.reindex(period_order),
+            mode="lines",
+            name="Historical Mean",
+            line={"color": "navy", "width": 2.5},
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=period_order,
+            y=recent_by_period.reindex(period_order),
+            mode="lines",
+            name=f"Recent Year ({recent_label})",
+            line={"color": "red", "width": 2},
+        )
+    )
+    if flood_limits:
+        for label, threshold in flood_limits.items():
+            fig.add_hline(
+                y=threshold,
+                line_dash="dot",
+                line_color=FLOOD_COLORS.get(label, "gray"),
+                annotation_text=_flood_annotation(label, threshold),
+                annotation_position="left",
+                layer="below",
+            )
+    unit = f" ({unit_label})" if unit_label else ""
+    fig.update_layout(
+        title=title or f"Mean Inflow with Flood Limits{unit}",
+        xaxis_title=period_label,
+        yaxis_title=f"Inflow{unit}",
+        hovermode="x unified",
+        template=_TEMPLATE,
+        height=550,
+        xaxis={"tickangle": -90},
+        margin={"l": 100, "r": 100},
+    )
     return fig
