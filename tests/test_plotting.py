@@ -1,5 +1,5 @@
-"""Plot builders: LOWESS parity, bounds plots, and the Phase-4 (Section 12)
-distribution/box-whisker/flood plot functions.
+"""Plot builders: LOWESS parity, bounds plots, and the Phase-4 (Section
+12/13) distribution/box-whisker/flood/day-grid plot functions.
 
 The time-series/ITA-scatter functions still have no test coverage in this
 codebase; this file covers what was newly ported here rather than attempting
@@ -15,17 +15,34 @@ from matplotlib.figure import Figure
 from plotly.graph_objects import Figure as GoFigure
 
 from hydrotrends.core.constants import FLOOD_LIMITS_1000CUSECS
-from hydrotrends.stats.trends import SenSlope
+from hydrotrends.stats.trends import SenSlope, sens_slope
 from hydrotrends.viz.plotting import (
     boxwhisker_grid,
+    build_day_grid,
     compute_lowess,
+    daily_duration_curve_interactive,
+    daily_duration_curve_static,
+    daily_flood_heatmap,
+    daily_flood_heatmap_interactive,
+    daily_flood_overlay,
+    day_grid_layout,
     distribution_grid,
+    draw_anomaly_cell,
+    draw_boxwhisker_cell,
+    draw_decadal_blocks_cell,
+    draw_histogram_kde_cell,
+    draw_ita_scatter_cell,
+    draw_parametric_bounds_cell,
+    draw_recent_vs_longterm_cell,
+    draw_robust_bounds_cell,
+    draw_violin_cell,
     flood_heatmap,
     flood_heatmap_interactive,
     flood_overlay_interactive,
     flood_overlay_static,
     flow_duration_curve_interactive,
     flow_duration_curve_static,
+    hist_mode,
     parametric_bounds_plot,
     robust_bounds_plot,
     single_histogram,
@@ -230,3 +247,224 @@ def test_flood_overlay_static_and_interactive_run():
         flood_limits=flood_limits,
     )
     assert isinstance(fig_i, GoFigure)
+
+
+# ── Section 13: day-grid engine + cell functions ────────────────────────────
+@pytest.mark.parametrize(
+    "n_days,expect_shape", [(28, (3, 10)), (30, (3, 10)), (31, (3, 11))]
+)
+def test_day_grid_layout_shapes(n_days, expect_shape):
+    positions, nrows, ncols = day_grid_layout(n_days)
+    assert (nrows, ncols) == expect_shape
+    assert len(positions) == n_days
+    assert positions[0] == (0, 0)
+    assert len(set(positions)) == n_days  # no two days share a cell
+
+
+def test_build_day_grid_sets_suptitle_and_axis_count():
+    def cell(ax, day_num):
+        ax.set_title(str(day_num))
+
+    fig = build_day_grid(31, title="Test Grid", cell_draw_fn=cell)
+    assert fig._suptitle.get_text() == "Test Grid"
+    assert len(fig.axes) == 33  # 3x11 grid, all 33 cells exist (2 blank)
+
+
+def test_hist_mode_finds_the_tallest_bin_center():
+    values = np.concatenate([np.full(50, 10.0), np.full(5, 100.0)])
+    assert hist_mode(values, bins=10) < 50.0
+
+
+@pytest.mark.parametrize(
+    "draw_fn",
+    [draw_boxwhisker_cell, draw_histogram_kde_cell, draw_violin_cell],
+)
+def test_distribution_cells_mark_insufficient_data(draw_fn):
+    def cell(ax, day_num):
+        draw_fn(ax, day_num, [1.0, 2.0], unit_label="Cusecs")
+
+    fig = build_day_grid(1, title="Test", cell_draw_fn=cell)
+    assert "insufficient data" in fig.axes[0].get_title()
+
+
+def test_draw_boxwhisker_cell_shows_five_number_summary():
+    rng = np.random.default_rng(0)
+    values = rng.uniform(20_000, 60_000, 30)
+
+    def cell(ax, day_num):
+        draw_boxwhisker_cell(ax, day_num, values, unit_label="Cusecs")
+
+    fig = build_day_grid(1, title="Test", cell_draw_fn=cell)
+    labels = [t.get_text() for t in fig.axes[0].get_legend().get_texts()]
+    assert any(lbl.startswith("Median:") for lbl in labels)
+    assert any(lbl.startswith("Max:") for lbl in labels)
+    assert any(lbl.startswith("Min:") for lbl in labels)
+
+
+def test_draw_violin_cell_shows_mean_marker():
+    rng = np.random.default_rng(1)
+    values = rng.uniform(20_000, 60_000, 30)
+
+    def cell(ax, day_num):
+        draw_violin_cell(ax, day_num, values, unit_label="Cusecs")
+
+    fig = build_day_grid(1, title="Test", cell_draw_fn=cell)
+    labels = [t.get_text() for t in fig.axes[0].get_legend().get_texts()]
+    assert any(lbl.startswith("Mean:") for lbl in labels)
+
+
+@pytest.mark.parametrize(
+    "draw_fn",
+    [
+        draw_parametric_bounds_cell,
+        draw_robust_bounds_cell,
+        draw_anomaly_cell,
+        draw_decadal_blocks_cell,
+        draw_recent_vs_longterm_cell,
+    ],
+)
+def test_trend_cells_mark_insufficient_data(draw_fn):
+    def cell(ax, day_num):
+        draw_fn(ax, day_num, [2000, 2001], [1.0, 2.0], unit_label="Cusecs")
+
+    fig = build_day_grid(1, title="Test", cell_draw_fn=cell)
+    assert "insufficient data" in fig.axes[0].get_title()
+
+
+def test_draw_parametric_bounds_cell_draws_sen_slope_and_change_point():
+    years = np.arange(2000, 2020, dtype="float64")
+    values = 100.0 + 2.0 * (years - 2000) + np.sin(years)
+    sen = sens_slope(values)
+
+    def cell(ax, day_num):
+        draw_parametric_bounds_cell(
+            ax,
+            day_num,
+            years,
+            values,
+            unit_label="Cusecs",
+            sen_slope=sen,
+            change_point_year=2010,
+        )
+
+    fig = build_day_grid(1, title="Test", cell_draw_fn=cell)
+    labels = [t.get_text() for t in fig.axes[0].get_legend().get_texts()]
+    assert any("Sen's Slope" in lbl for lbl in labels)
+    assert any("Bai-Perron" in lbl for lbl in labels)
+
+
+def test_draw_robust_bounds_cell_draws_sen_slope_and_change_point():
+    years = np.arange(2000, 2020, dtype="float64")
+    values = 100.0 + 2.0 * (years - 2000) + np.sin(years)
+    sen = sens_slope(values)
+
+    def cell(ax, day_num):
+        draw_robust_bounds_cell(
+            ax,
+            day_num,
+            years,
+            values,
+            unit_label="Cusecs",
+            sen_slope=sen,
+            change_point_year=2012,
+        )
+
+    fig = build_day_grid(1, title="Test", cell_draw_fn=cell)
+    labels = [t.get_text() for t in fig.axes[0].get_legend().get_texts()]
+    assert any("Sen's Slope" in lbl for lbl in labels)
+    assert any("Pettitt" in lbl for lbl in labels)
+
+
+def test_draw_ita_scatter_cell_marks_insufficient_data_below_six_points():
+    def cell(ax, day_num):
+        draw_ita_scatter_cell(ax, day_num, [1.0, 2.0, 3.0])
+
+    fig = build_day_grid(1, title="Test", cell_draw_fn=cell)
+    assert "insufficient data" in fig.axes[0].get_title()
+
+
+def test_draw_ita_scatter_cell_runs_with_enough_points():
+    rng = np.random.default_rng(2)
+    values = rng.uniform(20_000, 60_000, 20)
+
+    def cell(ax, day_num):
+        draw_ita_scatter_cell(ax, day_num, values)
+
+    fig = build_day_grid(1, title="Test", cell_draw_fn=cell)
+    assert fig.axes[0].get_title() == "01"
+
+
+def test_daily_duration_curve_annotation_includes_exceedance_probability():
+    """The Section-13 enhancement over flow_duration_curve_static: an
+    exceedance-probability readout alongside the threshold."""
+    rng = np.random.default_rng(3)
+    values = rng.uniform(20_000, 900_000, 200)
+    flood_limits = {k: v * 1000 for k, v in FLOOD_LIMITS_1000CUSECS.items()}
+
+    fig = daily_duration_curve_static(
+        values, unit_label="Cusecs", flood_limits=flood_limits
+    )
+    annotations = [a.get_text() for a in fig.axes[0].texts]
+    assert any(
+        "LF (250,000)" in a and "Exceedance Probability" in a for a in annotations
+    )
+
+    fig_i = daily_duration_curve_interactive(
+        values, unit_label="Cusecs", flood_limits=flood_limits
+    )
+    assert isinstance(fig_i, GoFigure)
+    hline_texts = [ann.text or "" for ann in fig_i.layout.annotations or []]
+    assert any(
+        "LF (250,000)" in t and "Exceedance Probability" in t for t in hline_texts
+    )
+
+
+def test_daily_flood_heatmap_and_interactive_counterpart_run():
+    periods = [f"Apr-{d:02d}" for d in range(1, 31)]
+    rng = np.random.default_rng(4)
+    counts = pd.DataFrame(
+        {
+            "LF": rng.integers(0, 10, len(periods)),
+            "MF": rng.integers(0, 5, len(periods)),
+            "HF": np.zeros(len(periods), dtype=int),
+            "VHF": np.zeros(len(periods), dtype=int),
+            "EHF": np.zeros(len(periods), dtype=int),
+        },
+        index=periods,
+    )
+    fig = daily_flood_heatmap(counts, periods)
+    assert isinstance(fig, Figure)
+
+    fig_i = daily_flood_heatmap_interactive(counts, periods)
+    assert isinstance(fig_i, GoFigure)
+
+
+def test_daily_flood_overlay_runs_and_labels_hydro_year():
+    periods = [f"Apr-{d:02d}" for d in range(1, 31)]
+    rng = np.random.default_rng(5)
+    mean_s = pd.Series(rng.uniform(30_000, 40_000, len(periods)), index=periods)
+    q1_s = pd.Series(rng.uniform(20_000, 25_000, len(periods)), index=periods)
+    q3_s = pd.Series(rng.uniform(45_000, 50_000, len(periods)), index=periods)
+    min_s = pd.Series(rng.uniform(10_000, 15_000, len(periods)), index=periods)
+    max_s = pd.Series(rng.uniform(60_000, 70_000, len(periods)), index=periods)
+    std_s = pd.Series(rng.uniform(1_000, 5_000, len(periods)), index=periods)
+    recent_s = pd.Series(rng.uniform(30_000, 40_000, len(periods)), index=periods)
+    flood_limits = {k: v * 1000 for k, v in FLOOD_LIMITS_1000CUSECS.items()}
+
+    fig = daily_flood_overlay(
+        periods,
+        mean_s,
+        recent_s,
+        "2023-24",
+        q1_s,
+        q3_s,
+        min_s,
+        max_s,
+        std_s,
+        unit_label="Cusecs",
+        flood_limits=flood_limits,
+    )
+    assert isinstance(fig, Figure)
+    labels = _legend_labels(fig)
+    assert any("HydroYear 2023-24" in lbl for lbl in labels)
+    assert any("3 Std Dev" in lbl for lbl in labels)
