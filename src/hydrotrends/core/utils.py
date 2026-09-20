@@ -29,6 +29,7 @@ import pandas as pd
 from .constants import (
     CUSEC_TO_M3S,
     DEKAD_UPPER_DAYS,
+    FLOOD_LIMITS_1000CUSECS,
     M3_PER_BCM,
     M3_PER_MAF,
     SEC_PER_DAY,
@@ -42,6 +43,7 @@ __all__ = [
     "significance_stars",
     "days_in_dekad",
     "cusecs_to_cumecs",
+    "flood_limits_for_unit",
     "mean_flow_to_volume_m3",
     "m3_to_volume",
     "mean_flow_to_volume",
@@ -106,6 +108,26 @@ def cusecs_to_cumecs(flow_cusecs: Numeric) -> Numeric:
     """Convert flow from Cusecs (ft3/s) to Cumecs (m3/s). Scalar or array."""
     result: Numeric = flow_cusecs * CUSEC_TO_M3S
     return result
+
+
+def flood_limits_for_unit(flow_unit: str) -> dict[str, float]:
+    """Convert the canonical 1000-Cusecs flood limits into ``flow_unit``.
+
+    ``flow_unit`` must contain "Cusec" or "Cumec" (case-sensitive, matching
+    the report's unit labels); flood limits aren't meaningful for a
+    volume-based unit, so anything else raises.
+    """
+    if "Cusec" in flow_unit:
+        return {k: float(v * 1000) for k, v in FLOOD_LIMITS_1000CUSECS.items()}
+    if "Cumec" in flow_unit:
+        return {
+            k: float(v * 1000 * CUSEC_TO_M3S)
+            for k, v in FLOOD_LIMITS_1000CUSECS.items()
+        }
+    raise ValueError(
+        f"Flood limits are only defined for flow units (Cusecs/Cumecs), "
+        f"got: {flow_unit}"
+    )
 
 
 def mean_flow_to_volume_m3(mean_flow_cusecs: Numeric, n_days: Numeric) -> Numeric:

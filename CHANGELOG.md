@@ -64,10 +64,31 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   numbers are untouched.
 - `generate_report` writes Horizontal (one row per year, across that year's
   periods) and Vertical (one row per period, across years) Descriptive
-  Statistics Summary sheets -- `{Daily,10Daily,Monthly,Hydro_Season,
-  Met_Season}_Summary_{H,V}_{unit}` plus a single across-years
+  Statistics Summary sheets. Daily/10Daily are tripled across Cal/Hydro/Met
+  Year, matching the raw Data sheets (`{Daily,10Daily[_Mean]}_Summ_{H,V}_
+  {CY,HY,MY}_{unit}`, framing key abbreviated to fit Excel's 31-char
+  sheet-name limit); Monthly/Hydro_Season/Met_Season stay single (Hydro- or
+  Met-Year framed, matching their Data sheets, which were never tripled
+  either) as `{scale}_Summary_{H,V}_{unit}`, plus a single across-years
   `Annual_Summary_{unit}` (annual volume has no within-year sub-period to
-  summarise Horizontally) -- for every scale, Hydro-Year framed.
+  summarise Horizontally).
+- `hydrotrends.plots.generate_plots`: the plotting counterpart to
+  `generate_report` -- writes a directory tree of PNG/interactive-HTML files
+  instead of a workbook. Not imported by the top-level `hydrotrends` package
+  (matches `hydrotrends.viz.plotting`'s existing lazy-import boundary, so
+  `import hydrotrends` still doesn't pull in Matplotlib/Plotly/Seaborn).
+  First piece: the source script's Section 12 (v23) "all 5 scales"
+  distribution/duration/flood-exceedance suite -- a histogram+KDE grid and a
+  box-whisker grid per scale (Daily split into one grid per calendar month;
+  10-Daily/Monthly/Seasonal each a single grid; Annual a single histogram),
+  a duration curve (static + interactive) per scale, and -- Daily/10-Daily
+  only, where flood limits are physically meaningful for a flow unit -- a
+  flood-exceedance overlay and heatmap (static + interactive). New plot
+  functions backing it in `hydrotrends.viz.plotting`: `boxwhisker_grid`,
+  `single_histogram`, `flood_overlay_static`/`flood_overlay_interactive`,
+  `flood_heatmap_interactive`. `hydrotrends.core.utils.flood_limits_for_unit`
+  converts the canonical 1000-Cusecs flood limits (LF/MF/HF/VHF/EHF) to an
+  active flow unit.
 
 ### Removed
 - The `Descriptive (...)`/`Monthly Descriptive (...)`/`Hydro Season

@@ -631,9 +631,9 @@ def robust_bounds_plot(
 # Distribution grid and flood-exceedance heatmap
 # ─────────────────────────────────────────────────────────────────────────────
 def distribution_grid(
-    data_by_period: Mapping[object, ArrayLike],
+    data_by_period: Mapping[str, ArrayLike],
     *,
-    order: list[object] | None = None,
+    order: list[str] | None = None,
     title: str | None = None,
     unit_label: str = "",
     ncols: int = 4,
@@ -706,9 +706,9 @@ def distribution_grid(
 
 
 def boxwhisker_grid(
-    data_by_period: Mapping[object, ArrayLike],
+    data_by_period: Mapping[str, ArrayLike],
     *,
-    order: list[object] | None = None,
+    order: list[str] | None = None,
     title: str | None = None,
     unit_label: str = "",
     ncols: int = 4,
@@ -894,7 +894,7 @@ def flood_heatmap_interactive(
 
 
 def flood_overlay_static(
-    period_order: list[object],
+    period_order: list[str],
     mean_by_period: pd.Series,
     recent_by_period: pd.Series,
     recent_label: str,
@@ -969,7 +969,7 @@ def flood_overlay_static(
 
 
 def flood_overlay_interactive(
-    period_order: list[object],
+    period_order: list[str],
     mean_by_period: pd.Series,
     recent_by_period: pd.Series,
     recent_label: str,

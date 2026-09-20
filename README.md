@@ -68,15 +68,26 @@ hydro-trend analyze inflow.csv --value-column inflow_cusec -o ./outputs
   normality diagnostics), Flow Duration, and Totals — written as Horizontal
   (across periods within a year) and Vertical (across years for a period)
   summary sheets for every scale.
-- **Not yet ported**: the reference script's full visualization suite (per
-  calendar-month box-whisker/histogram/violin grids, decadal blocks,
-  flood-exceedance overlays, across all five aggregation scales).
+- **`hydrotrends.plots.generate_plots`** (import it explicitly —
+  `from hydrotrends.plots import generate_plots` — it isn't pulled in by
+  `import hydrotrends`, same as `hydrotrends.viz.plotting`, so the base
+  package stays free of the Matplotlib/Plotly/Seaborn dependency): the
+  reference script's Section 12 "all 5 scales" distribution/duration/
+  flood-exceedance suite is fully ported — a histogram+KDE grid and a
+  box-whisker grid per scale, duration curves, and Daily/10-Daily
+  flood-exceedance overlays/heatmaps.
+- **Not yet ported**: the reference script's Section 13 (per-calendar-month,
+  per-day box-whisker/histogram/violin/trend grids, Daily scale only) and
+  Section 11 (a 6-plot trend suite — Parametric/Robust Bounds, Anomalies,
+  ITA Scatter, Decadal Blocks, Sliding Windows — for every individual series
+  across all five scales, plus 5 summary trend heatmaps).
   `hydrotrends.viz.plotting` currently covers time-series plots, ITA scatter,
-  flow-duration curves (with flood-limit annotation), a generic trend-scatter
-  overlay, the parametric/robust LOWESS bounds plots (mean ± 3 Std Dev /
-  median ± 1.5 IQR, with Sen's-slope and change-point overlays — parity-tested
-  in `tests/test_plotting.py`), a histogram+KDE distribution grid, and a
-  flood-exceedance heatmap — a meaningful subset, not full parity.
+  flow-duration curves, a generic trend-scatter overlay, the parametric/robust
+  LOWESS bounds plots (mean ± 3 Std Dev / median ± 1.5 IQR, with Sen's-slope
+  and change-point overlays — parity-tested in `tests/test_plotting.py`), a
+  histogram+KDE distribution grid, a box-whisker grid, a single-scale
+  histogram, flood-exceedance heatmaps, and flood-exceedance overlay charts —
+  a meaningful subset, not full parity.
 
 If you're comparing output against the reference script and the numbers
 don't match, check whether the mismatch is in a feature listed above as "not
