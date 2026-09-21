@@ -89,6 +89,21 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `flood_heatmap_interactive`. `hydrotrends.core.utils.flood_limits_for_unit`
   converts the canonical 1000-Cusecs flood limits (LF/MF/HF/VHF/EHF) to an
   active flow unit.
+  Second piece: the source script's Section 13 (v24) Daily-only
+  per-calendar-month day-grid suite -- for every calendar month, a 3x10 grid
+  (3x11 for 31-day months, extra column only in the last row) with one cell
+  per calendar day showing box-whisker, histogram+KDE, violin, parametric-
+  bounds (LOWESS + mean ± 3 Std Dev + Sen's slope + Bai-Perron break),
+  robust-bounds (LOWESS + median ± 1.5 IQR + Sen's slope + Pettitt break),
+  anomaly, ITA-scatter, decadal-blocks, or recent-vs-long-term views across
+  that day's years, plus a Daily-scale duration curve (static + interactive,
+  with an exceedance-probability annotation the Section-12 duration curve
+  doesn't have) and flood heatmap/overlay (overlay: static only, matching the
+  source). New plot functions in `hydrotrends.viz.plotting`:
+  `day_grid_layout`, `build_day_grid`, `hist_mode`, the nine `draw_*_cell`
+  functions, `daily_duration_curve_static`/`daily_duration_curve_interactive`,
+  `daily_flood_heatmap`/`daily_flood_heatmap_interactive`,
+  `daily_flood_overlay`.
 
 ### Removed
 - The `Descriptive (...)`/`Monthly Descriptive (...)`/`Hydro Season
