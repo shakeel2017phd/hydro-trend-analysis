@@ -104,6 +104,32 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   functions, `daily_duration_curve_static`/`daily_duration_curve_interactive`,
   `daily_flood_heatmap`/`daily_flood_heatmap_interactive`,
   `daily_flood_overlay`.
+  Third piece: the source script's Section 11 (v22) whole-series 6-plot
+  trend suite -- Parametric Bounds, Robust Bounds, Anomalies, ITA Scatter,
+  Decadal Blocks, and Sliding Windows -- run for every Annual/Seasonal/
+  Monthly/10-Daily series (Volume-based, whenever the `ReportColumn` is
+  volume-paired) and, by default, every one of the 366 individual calendar
+  days (Flow-based) -- full source parity, with a new
+  `include_daily_period_suites` parameter on `generate_plots` to opt out of
+  the daily piece's very large extra cost. Also writes the aggregated
+  `Mean_Shifts_Summary_<unit>.xlsx` (Decadal_Blocks/Sliding_Windows sheets)
+  and the source's 5 summary overview plots: a multi-decadal
+  seasonal-divergence LOWESS chart plus Seasonal/Monthly/Dekadal/Daily
+  "Monotonic Trends" heatmaps condensing every period's trend direction and
+  significance into one calendar-style panel each. New plot functions in
+  `hydrotrends.viz.plotting`: `anomaly_bar_chart`, `compute_decadal_summary`/
+  `decadal_blocks_bar_chart`, `compute_sliding_window_summary`/
+  `sliding_windows_bar_chart`, `seasonal_divergence_lowess_chart`,
+  `seasonal_trend_heatmap`, `monthly_trend_heatmap`, `dekadal_trend_heatmap`,
+  `daily_trend_heatmap` -- distinct from the source's per-calendar-day
+  Section-13 cell equivalents (`draw_anomaly_cell`/`draw_decadal_blocks_cell`/
+  `draw_recent_vs_longterm_cell`), whose formulas and labels genuinely
+  differ. The Dekadal/Daily summary heatmaps use the *flow* column/unit even
+  though the Dekadal_Plots whole-series suite is Volume-based, and the
+  Monthly summary heatmap doesn't blank a "ns" (not-significant) annotation
+  the way its Seasonal/Dekadal/Daily counterparts do -- both are genuine
+  inconsistencies in the source script, reproduced here for parity rather
+  than "fixed".
 
 ### Removed
 - The `Descriptive (...)`/`Monthly Descriptive (...)`/`Hydro Season
@@ -130,11 +156,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Scope note
 `hydrotrends` now has parity-tested statistical coverage (see above) for
-daily/10-daily flow and monthly/seasonal/annual volume trend analysis, plus a
-growing subset of the source script's visualization suite (see above). Still
-not ported: per-month box-whisker/histogram/violin grids, decadal blocks, and
-flood-exceedance overlays, across all five aggregation scales — see the
-README's "Current scope" section for exactly what's covered.
+daily/10-daily flow and monthly/seasonal/annual volume trend analysis, plus
+the source script's full visualization suite (Sections 11-13 — see above)
+via `hydrotrends.plots.generate_plots` — see the README's "Current scope"
+section for exactly what's covered.
 
 ## [0.1.0] - 2026-07-10
 

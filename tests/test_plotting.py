@@ -1,5 +1,6 @@
 """Plot builders: LOWESS parity, bounds plots, and the Phase-4 (Section
-12/13) distribution/box-whisker/flood/day-grid plot functions.
+11/12/13) distribution/box-whisker/flood/day-grid/whole-series-trend plot
+functions.
 
 The time-series/ITA-scatter functions still have no test coverage in this
 codebase; this file covers what was newly ported here rather than attempting
@@ -11,21 +12,28 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 import pytest
+from matplotlib import colors as mcolors
 from matplotlib.figure import Figure
 from plotly.graph_objects import Figure as GoFigure
 
 from hydrotrends.core.constants import FLOOD_LIMITS_1000CUSECS
 from hydrotrends.stats.trends import SenSlope, sens_slope
 from hydrotrends.viz.plotting import (
+    anomaly_bar_chart,
     boxwhisker_grid,
     build_day_grid,
+    compute_decadal_summary,
     compute_lowess,
+    compute_sliding_window_summary,
     daily_duration_curve_interactive,
     daily_duration_curve_static,
     daily_flood_heatmap,
     daily_flood_heatmap_interactive,
     daily_flood_overlay,
+    daily_trend_heatmap,
     day_grid_layout,
+    decadal_blocks_bar_chart,
+    dekadal_trend_heatmap,
     distribution_grid,
     draw_anomaly_cell,
     draw_boxwhisker_cell,
@@ -43,9 +51,13 @@ from hydrotrends.viz.plotting import (
     flow_duration_curve_interactive,
     flow_duration_curve_static,
     hist_mode,
+    monthly_trend_heatmap,
     parametric_bounds_plot,
     robust_bounds_plot,
+    seasonal_divergence_lowess_chart,
+    seasonal_trend_heatmap,
     single_histogram,
+    sliding_windows_bar_chart,
 )
 
 from . import reference_v26_core as ref
@@ -468,3 +480,187 @@ def test_daily_flood_overlay_runs_and_labels_hydro_year():
     labels = _legend_labels(fig)
     assert any("HydroYear 2023-24" in lbl for lbl in labels)
     assert any("3 Std Dev" in lbl for lbl in labels)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Section 11: whole-series trend suite (anomalies / decadal blocks / sliding
+# windows) -- distinct from the Section-13 per-day cells above.
+# ─────────────────────────────────────────────────────────────────────────────
+def test_anomaly_bar_chart_colors_bars_by_sign():
+    years = np.arange(2000, 2010, dtype="float64")
+    values = np.array([90, 95, 100, 80, 120, 100, 100, 60, 140, 100], dtype="float64")
+    mean_val = values.mean()
+
+    fig = anomaly_bar_chart(years, values, title="Annual Anomalies", unit_label="MAF")
+    ax = fig.axes[0]
+    assert ax.get_title() == "Annual Anomalies"
+    assert "Deviation from Mean (MAF)" in ax.get_ylabel()
+
+    bars = ax.patches
+    assert len(bars) == len(values)
+    for bar, val in zip(bars, values, strict=True):
+        expected = "#2ca02c" if val >= mean_val else "#d62728"
+        assert mcolors.to_hex(bar.get_facecolor()) == expected
+
+
+def test_compute_decadal_summary_matches_expected_boundaries():
+    # Spans four decade buckets: 1975-1980, 1981-1990, 1991-2000, 2001-2005
+    # (the open-ended trailing bucket keeps the fixed "2001-2010" label even
+    # though the data stops at 2005 -- matching the source's fixed-string
+    # buckets for every boundary but the first/last).
+    years = np.arange(1975, 2006)
+    values = np.arange(len(years), dtype="float64")
+
+    summary = compute_decadal_summary(years, values)
+
+    assert list(summary["Decade"].astype(str)) == [
+        "1975–1980",
+        "1981–1990",
+        "1991–2000",
+        "2001–2010",
+    ]
+    assert list(summary["Years"]) == [6, 10, 10, 5]
+    df = pd.DataFrame({"Year": years, "Val": values})
+    expected_means = [
+        df.loc[df["Year"].between(1975, 1980), "Val"].mean(),
+        df.loc[df["Year"].between(1981, 1990), "Val"].mean(),
+        df.loc[df["Year"].between(1991, 2000), "Val"].mean(),
+        df.loc[df["Year"].between(2001, 2005), "Val"].mean(),
+    ]
+    assert np.allclose(summary["Mean"].to_numpy(), expected_means)
+
+
+def test_decadal_blocks_bar_chart_annotates_bars_and_overall_mean_line():
+    years = np.arange(1975, 2006)
+    values = np.arange(len(years), dtype="float64")
+    summary = compute_decadal_summary(years, values)
+    overall_mean = float(values.mean())
+
+    fig = decadal_blocks_bar_chart(
+        summary, overall_mean=overall_mean, title="Decadal (Annual)", unit_label="MAF"
+    )
+    ax = fig.axes[0]
+    assert ax.get_title() == "Decadal (Annual)"
+    assert len(ax.patches) == len(summary)
+    labels = _legend_labels(fig)
+    assert any("Overall Mean" in lbl for lbl in labels)
+    assert ax.get_ylim()[1] == pytest.approx(float(summary["Mean"].max()) * 1.15)
+
+
+def test_compute_sliding_window_summary_windows_and_spans():
+    years = np.arange(1970, 2020)  # 50 years: 1970..2019
+    values = years.astype("float64")
+
+    summary = compute_sliding_window_summary(years, values)
+
+    assert list(summary["Period"]) == [
+        "Overall Climatological",
+        "Last 40 Years",
+        "Last 20 Years",
+        "Last 10 Years",
+        "Last 5 Years",
+    ]
+    assert list(summary["Years_Included"]) == [50, 40, 20, 10, 5]
+    assert list(summary["Span"]) == [
+        "1970–2019",
+        "1980–2019",
+        "2000–2019",
+        "2010–2019",
+        "2015–2019",
+    ]
+    # values == years here, so each window's mean is the midpoint of its span.
+    assert summary.loc[summary["Period"] == "Last 5 Years", "Mean"].iloc[0] == 2017.0
+
+
+def test_sliding_windows_bar_chart_highlights_overall_climatological():
+    years = np.arange(1970, 2020)
+    values = years.astype("float64")
+    summary = compute_sliding_window_summary(years, values)
+
+    fig = sliding_windows_bar_chart(summary, title="Sliding (Annual)", unit_label="MAF")
+    ax = fig.axes[0]
+    assert ax.get_title() == "Sliding (Annual)"
+    assert len(ax.patches) == len(summary)
+    assert mcolors.to_hex(ax.patches[0].get_facecolor()) == "#e74c3c"
+    for bar in ax.patches[1:]:
+        assert mcolors.to_hex(bar.get_facecolor()) == "#3498db"
+    labels = _legend_labels(fig)
+    assert any("Long-term Historical Mean" in lbl for lbl in labels)
+    assert any("Recent Sliding Means" in lbl for lbl in labels)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Section 11's 5 summary overview plots (7A-7E).
+# ─────────────────────────────────────────────────────────────────────────────
+def test_seasonal_divergence_lowess_chart_skips_seasons_with_insufficient_data():
+    years = np.arange(2000, 2021)  # 21 years
+    rng = np.random.default_rng(6)
+    series_by_season = {
+        "Early_Kharif": pd.Series(rng.uniform(1, 2, len(years)), index=years),
+        # Only 2 valid years -- below the source's "> 3" threshold.
+        "Late_Kharif": pd.Series([1.0, 1.1], index=[2000, 2001]),
+        "Rabi": pd.Series(rng.uniform(0.5, 1.0, len(years)), index=years),
+    }
+
+    fig = seasonal_divergence_lowess_chart(years, series_by_season, unit_label="MAF")
+    ax = fig.axes[0]
+    assert "Multi-Decadal Smoothing" in ax.get_title()
+    labels = _legend_labels(fig)
+    assert any("Early Kharif (LOWESS)" in lbl for lbl in labels)
+    assert any("Rabi (LOWESS)" in lbl for lbl in labels)
+    assert not any("Late Kharif" in lbl for lbl in labels)
+
+
+def test_seasonal_trend_heatmap_blanks_ns_and_missing_season():
+    trend_by_season = {
+        "Early_Kharif": ("increasing", "***"),
+        "Rabi": ("decreasing", "ns"),
+        # "Kharif"/"Late_Kharif"/"Annual" omitted -- left blank.
+    }
+    fig = seasonal_trend_heatmap(trend_by_season, unit_label="MAF")
+    ax = fig.axes[0]
+    assert "Seasonal & Annual Monotonic Trends" in ax.get_title()
+    texts = [t.get_text() for t in ax.texts]
+    # Only the 2 populated cells get annotated at all -- seaborn masks NaN
+    # cells (the 3 omitted columns) entirely, with no text object emitted.
+    assert texts == ["***", ""]
+
+
+def test_monthly_trend_heatmap_shows_literal_ns():
+    monthly_results = pd.DataFrame(
+        {"trend": ["increasing", "no trend"], "significance": ["**", "ns"]},
+        index=["Apr", "May"],
+    )
+    fig = monthly_trend_heatmap(monthly_results, unit_label="MAF")
+    ax = fig.axes[0]
+    assert "Monthly Monotonic Trends" in ax.get_title()
+    texts = [t.get_text() for t in ax.texts]
+    assert "**" in texts
+    # Unlike seasonal/dekadal/daily, "ns" is shown literally, not blanked.
+    assert "ns" in texts
+
+
+def test_dekadal_trend_heatmap_places_periods_by_month_and_dekad():
+    dekadal_results = pd.DataFrame(
+        {"trend": ["increasing", "decreasing"], "significance": ["*", "ns"]},
+        index=["Apr1", "May2"],
+    )
+    fig = dekadal_trend_heatmap(dekadal_results, unit_label="Cusecs")
+    ax = fig.axes[0]
+    assert "10-Daily Monotonic Trends" in ax.get_title()
+    assert ax.get_xlabel() == "Dekad (1, 2, 3)"
+    texts = [t.get_text() for t in ax.texts]
+    assert "*" in texts
+
+
+def test_daily_trend_heatmap_places_periods_by_month_and_day():
+    daily_results = pd.DataFrame(
+        {"trend": ["increasing", "no trend"], "significance": ["***", "ns"]},
+        index=["Apr-01", "Mar-31"],
+    )
+    fig = daily_trend_heatmap(daily_results, unit_label="Cusecs")
+    ax = fig.axes[0]
+    assert "Daily Monotonic Trends" in ax.get_title()
+    assert ax.get_xlabel() == "Day of Month"
+    texts = [t.get_text() for t in ax.texts]
+    assert "***" in texts

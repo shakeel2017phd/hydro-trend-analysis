@@ -21,13 +21,20 @@ from typing import TYPE_CHECKING
 import numpy as np
 import pandas as pd
 
-from .api import ReportColumn
+from .api import (
+    ReportColumn,
+    analyze_10daily_from_daily,
+    analyze_preprocessed,
+    analyze_series,
+)
 from .core.constants import (
     COL_HYDRO_YEAR,
+    COL_MONTH,
     COL_PERIOD,
     FULL_MONTHS,
     HYDRO_DEKADS,
     HYDRO_MONTHS,
+    HYDRO_PERIODS,
     TimeResolution,
 )
 from .core.utils import flood_limits_for_unit, hydro_year_label
@@ -39,15 +46,22 @@ from .data.preprocessing import (
 )
 from .stats.changepoint import bai_perron_change_point, pettitt_test
 from .stats.frequency import exceedance_counts
+from .stats.ita import innovative_trend_analysis
 from .stats.trends import sens_slope
 from .viz.plotting import (
+    anomaly_bar_chart,
     boxwhisker_grid,
     build_day_grid,
+    compute_decadal_summary,
+    compute_sliding_window_summary,
     daily_duration_curve_interactive,
     daily_duration_curve_static,
     daily_flood_heatmap,
     daily_flood_heatmap_interactive,
     daily_flood_overlay,
+    daily_trend_heatmap,
+    decadal_blocks_bar_chart,
+    dekadal_trend_heatmap,
     distribution_grid,
     draw_anomaly_cell,
     draw_boxwhisker_cell,
@@ -64,7 +78,14 @@ from .viz.plotting import (
     flood_overlay_static,
     flow_duration_curve_interactive,
     flow_duration_curve_static,
+    ita_scatter,
+    monthly_trend_heatmap,
+    parametric_bounds_plot,
+    robust_bounds_plot,
+    seasonal_divergence_lowess_chart,
+    seasonal_trend_heatmap,
     single_histogram,
+    sliding_windows_bar_chart,
 )
 
 if TYPE_CHECKING:
@@ -782,14 +803,406 @@ def _write_daily_detailed_plots(
     _save_static(fig, root / "FloodOverlay" / "Daily_Flood_Overlay.png", dpi=200)
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Section 11 (v22): whole-series 6-plot trend suite for every individual
+# series across all 5 scales, plus the 5 summary overview plots and the
+# aggregated Mean_Shifts_Summary workbook.
+# ─────────────────────────────────────────────────────────────────────────────
+_TREND_SUITE_MIN_YEARS = 10  # matches the source's `_plot_timeseries_suite` guard
+
+
+def _write_trend_suite(
+    out_dir: Path,
+    file_prefix: str,
+    scale_name: str,
+    years: np.ndarray,
+    values: np.ndarray,
+    unit_label: str,
+) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
+    """Write one series' whole-series 6-plot trend suite (Parametric/Robust
+    Bounds, Anomalies, ITA Scatter, Decadal Blocks, Sliding Windows) -- the
+    source's ``_plot_timeseries_suite``. Returns this series' decadal-block
+    and sliding-window summary rows for the aggregated Mean_Shifts_Summary
+    export (both empty if there's under 10 years of data to plot at all).
+    """
+    if len(years) < _TREND_SUITE_MIN_YEARS:
+        return [], []
+
+    sen = sens_slope(values)
+    bp_idx = bai_perron_change_point(values)
+    bp_year = (
+        float(years[bp_idx]) if bp_idx is not None and bp_idx < len(years) else None
+    )
+    pt_idx = pettitt_test(values).index
+    pt_year = (
+        float(years[pt_idx]) if pt_idx is not None and pt_idx < len(years) else None
+    )
+    unit = f" ({unit_label})" if unit_label else ""
+
+    fig = parametric_bounds_plot(
+        years,
+        values,
+        title=f"{scale_name} Inflow{unit} — Parametric Bounds",
+        unit_label=unit_label,
+        sen_slope=sen,
+        change_point_year=bp_year,
+    )
+    _save_static(fig, out_dir / f"{file_prefix}_1_Parametric.png", dpi=300)
+
+    fig = robust_bounds_plot(
+        years,
+        values,
+        title=f"{scale_name} Inflow{unit} — Robust Bounds",
+        unit_label=unit_label,
+        sen_slope=sen,
+        change_point_year=pt_year,
+    )
+    _save_static(fig, out_dir / f"{file_prefix}_2_Robust.png", dpi=300)
+
+    fig = anomaly_bar_chart(
+        years, values, title=f"{scale_name} Anomalies{unit}", unit_label=unit_label
+    )
+    _save_static(fig, out_dir / f"{file_prefix}_3_Anomalies.png", dpi=300)
+
+    ita = innovative_trend_analysis(values)
+    if len(ita.first_half) > 2:  # matches the source's `half_plot > 2` guard
+        fig = ita_scatter(
+            ita, title=f"ITA Scatter — {scale_name}", unit_label=unit_label
+        )
+        _save_static(fig, out_dir / f"{file_prefix}_4_ITA_Scatter.png", dpi=300)
+
+    decadal_summary = compute_decadal_summary(years, values)
+    overall_mean = float(np.asarray(values, dtype="float64").mean())
+    fig = decadal_blocks_bar_chart(
+        decadal_summary,
+        overall_mean=overall_mean,
+        title=f"Average Mean Value by Decade — {scale_name}{unit}",
+        unit_label=unit_label,
+    )
+    _save_static(fig, out_dir / f"{file_prefix}_5_Decadal_Blocks.png", dpi=300)
+
+    window_summary = compute_sliding_window_summary(years, values)
+    fig = sliding_windows_bar_chart(
+        window_summary,
+        title=f"Average Mean Value by Recent Mean and Long-term Mean — {scale_name}",
+        unit_label=unit_label,
+    )
+    _save_static(fig, out_dir / f"{file_prefix}_6_Sliding_Windows.png", dpi=300)
+
+    dec_rows = [
+        {
+            "Scale": scale_name,
+            "Decade_Block": str(row["Decade"]),
+            "Years_Count": int(row["Years"]),
+            f"Mean_Value_{unit_label}": float(row["Mean"]),
+        }
+        for _, row in decadal_summary.iterrows()
+    ]
+    win_rows = [
+        {
+            "Scale": scale_name,
+            "Period": row["Period"],
+            "Span": row["Span"],
+            "Years_Included": int(row["Years_Included"]),
+            f"Mean_Value_{unit_label}": float(row["Mean"]),
+        }
+        for _, row in window_summary.iterrows()
+    ]
+    return dec_rows, win_rows
+
+
+_TrendSuiteRows = tuple[list[dict[str, object]], list[dict[str, object]]]
+
+
+def _write_annual_trend_suite(
+    pre: PreprocessedData, value_col: str, unit_label: str, out_dir: Path
+) -> _TrendSuiteRows:
+    annual = hydro_seasonal_volumes(pre.hydro)["Annual"][value_col].dropna()
+    annual = annual.sort_index()
+    return _write_trend_suite(
+        out_dir,
+        "Ann",
+        "Annual",
+        annual.index.to_numpy(dtype="float64"),
+        annual.to_numpy(dtype="float64"),
+        unit_label,
+    )
+
+
+def _write_seasonal_trend_suites(
+    pre: PreprocessedData, value_col: str, unit_label: str, out_dir: Path
+) -> _TrendSuiteRows:
+    """One suite per cropping season, excluding Annual (kept in the Annual
+    suite instead) -- matches the source's ``if s_name == "Annual": continue``.
+    """
+    seasonal = hydro_seasonal_volumes(pre.hydro)
+    dec_rows: list[dict[str, object]] = []
+    win_rows: list[dict[str, object]] = []
+    for key in _SEASON_ORDER:
+        s = seasonal[key][value_col].dropna().sort_index()
+        d, w = _write_trend_suite(
+            out_dir,
+            f"Seas_{key}",
+            f"Seasonal ({key.replace('_', ' ')})",
+            s.index.to_numpy(dtype="float64"),
+            s.to_numpy(dtype="float64"),
+            unit_label,
+        )
+        dec_rows += d
+        win_rows += w
+    return dec_rows, win_rows
+
+
+def _write_monthly_trend_suites(
+    pre: PreprocessedData, value_col: str, unit_label: str, out_dir: Path
+) -> _TrendSuiteRows:
+    monthly_pivot = monthly_volumes(pre.hydro).pivot_table(
+        index=COL_HYDRO_YEAR, columns=COL_MONTH, values=value_col, aggfunc="first"
+    )
+    dec_rows: list[dict[str, object]] = []
+    win_rows: list[dict[str, object]] = []
+    for month in HYDRO_MONTHS:
+        if month not in monthly_pivot.columns:
+            continue
+        s = monthly_pivot[month].dropna().sort_index()
+        d, w = _write_trend_suite(
+            out_dir,
+            f"Mon_{month}",
+            f"Monthly ({month})",
+            s.index.to_numpy(dtype="float64"),
+            s.to_numpy(dtype="float64"),
+            unit_label,
+        )
+        dec_rows += d
+        win_rows += w
+    return dec_rows, win_rows
+
+
+def _write_dekadal_trend_suites(
+    dekad_frame: pd.DataFrame, value_col: str, unit_label: str, out_dir: Path
+) -> _TrendSuiteRows:
+    dek_pivot = dekad_frame.pivot_table(
+        index=COL_HYDRO_YEAR, columns=COL_PERIOD, values=value_col, aggfunc="first"
+    )
+    dec_rows: list[dict[str, object]] = []
+    win_rows: list[dict[str, object]] = []
+    for period in HYDRO_DEKADS:
+        if period not in dek_pivot.columns:
+            continue
+        s = dek_pivot[period].dropna().sort_index()
+        d, w = _write_trend_suite(
+            out_dir,
+            f"Dek_{period}",
+            f"10-Daily ({period})",
+            s.index.to_numpy(dtype="float64"),
+            s.to_numpy(dtype="float64"),
+            unit_label,
+        )
+        dec_rows += d
+        win_rows += w
+    return dec_rows, win_rows
+
+
+def _write_daily_trend_suites(
+    pre: PreprocessedData, value_col: str, unit_label: str, out_dir: Path
+) -> _TrendSuiteRows:
+    """366 whole-series suites, one per calendar day -- the very large,
+    opt-out-able piece gated by ``generate_plots``'s
+    ``include_daily_period_suites``.
+    """
+    hydro_pivot = pre.hydro.pivot_table(
+        index=COL_HYDRO_YEAR, columns=COL_PERIOD, values=value_col, aggfunc="first"
+    )
+    dec_rows: list[dict[str, object]] = []
+    win_rows: list[dict[str, object]] = []
+    for period in HYDRO_PERIODS:
+        if period not in hydro_pivot.columns:
+            continue
+        s = hydro_pivot[period].dropna().sort_index()
+        d, w = _write_trend_suite(
+            out_dir,
+            f"Daily_{period}",
+            f"Daily ({period})",
+            s.index.to_numpy(dtype="float64"),
+            s.to_numpy(dtype="float64"),
+            unit_label,
+        )
+        dec_rows += d
+        win_rows += w
+    return dec_rows, win_rows
+
+
+def _write_mean_shifts_summary(
+    out_dir: Path,
+    unit_label: str,
+    dec_rows: list[dict[str, object]],
+    win_rows: list[dict[str, object]],
+) -> None:
+    """The aggregated ``Mean_Shifts_Summary_{unit}.xlsx`` -- every trend
+    suite's Decadal-Blocks/Sliding-Windows rows, one workbook per volume unit.
+    """
+    out_dir.mkdir(parents=True, exist_ok=True)
+    path = out_dir / f"Mean_Shifts_Summary_{unit_label}.xlsx"
+    with pd.ExcelWriter(path, engine="openpyxl") as writer:
+        pd.DataFrame(dec_rows).to_excel(
+            writer, sheet_name="Decadal_Blocks", index=False
+        )
+        pd.DataFrame(win_rows).to_excel(
+            writer, sheet_name="Sliding_Windows", index=False
+        )
+
+
+def _write_summary_heatmaps(
+    pre: PreprocessedData, rc: ReportColumn, out_dir: Path, *, is_daily: bool
+) -> None:
+    """The source's 7A-7E summary overview plots: one multi-decadal LOWESS
+    chart (Volume) plus 4 "Monotonic Trends" heatmaps -- Seasonal (Volume),
+    Monthly (Volume), Dekadal (Flow), Daily (Flow, daily input only).
+
+    The Dekadal/Daily heatmaps use the *flow* column/unit even though the
+    Dekadal_Plots whole-series suite above is Volume-based -- a genuine
+    asymmetry in the source script (its "Dekadal_Plots" suite plots
+    ``vol_dek_hydro_pivot`` but its Dekadal summary heatmap uses the
+    flow-based 10-daily trend results), reproduced here rather than
+    "corrected" for consistency.
+    """
+    vol_col = rc.volume_column
+    if vol_col is None:
+        return
+    vol_unit = rc.volume_unit_label or ""
+
+    seasonal = hydro_seasonal_volumes(pre.hydro)
+    annual = seasonal["Annual"][vol_col].dropna().sort_index()
+    series_by_season = {key: seasonal[key][vol_col].dropna() for key in _SEASON_ORDER}
+    fig = seasonal_divergence_lowess_chart(
+        annual.index.to_numpy(), series_by_season, unit_label=vol_unit
+    )
+    _save_static(fig, out_dir / f"Summary_Seasonal_Shifts_{vol_unit}.png", dpi=300)
+
+    trend_by_season: dict[str, tuple[str, str]] = {}
+    for key, frames in seasonal.items():
+        s = frames[vol_col].dropna().sort_index()
+        row = analyze_series(s.to_numpy(), years=s.index.to_numpy())
+        if "trend" in row:
+            trend_by_season[key] = (row["trend"], row["significance"])
+    fig = seasonal_trend_heatmap(trend_by_season, unit_label=vol_unit)
+    _save_static(fig, out_dir / f"Summary_Seasonal_Heatmap_{vol_unit}.png", dpi=300)
+
+    monthly_pivot = monthly_volumes(pre.hydro).pivot_table(
+        index=COL_HYDRO_YEAR, columns=COL_MONTH, values=vol_col, aggfunc="first"
+    )
+    monthly_rows: dict[str, dict[str, object]] = {}
+    for month in HYDRO_MONTHS:
+        if month not in monthly_pivot.columns:
+            continue
+        s = monthly_pivot[month].dropna().sort_index()
+        row = analyze_series(s.to_numpy(), years=s.index.to_numpy())
+        if "trend" in row:
+            monthly_rows[month] = row
+    if monthly_rows:
+        monthly_results = pd.DataFrame.from_dict(monthly_rows, orient="index")
+        fig = monthly_trend_heatmap(monthly_results, unit_label=vol_unit)
+        _save_static(fig, out_dir / f"Summary_Monthly_Heatmap_{vol_unit}.png", dpi=300)
+
+    dekadal_results = (
+        analyze_10daily_from_daily(pre.hydro, value_col=rc.column)
+        if is_daily
+        else analyze_preprocessed(pre, value_col=rc.column)
+    )
+    fig = dekadal_trend_heatmap(dekadal_results, unit_label=rc.unit_label)
+    dekadal_unit_tag = rc.unit_label.replace(" ", "")
+    _save_static(
+        fig, out_dir / f"Summary_Dekadal_Heatmap_{dekadal_unit_tag}.png", dpi=300
+    )
+
+    if is_daily:
+        daily_results = analyze_preprocessed(pre, value_col=rc.column)
+        fig = daily_trend_heatmap(daily_results, unit_label=rc.unit_label)
+        daily_unit_tag = rc.unit_label.replace(" ", "")
+        _save_static(
+            fig, out_dir / f"Summary_Daily_Heatmap_{daily_unit_tag}.png", dpi=300
+        )
+
+
+def _write_all_trend_plots(
+    pre: PreprocessedData,
+    rc: ReportColumn,
+    output_dir: Path,
+    *,
+    is_daily: bool,
+    include_daily_period_suites: bool,
+) -> None:
+    """Section 11 (v22): the whole-series 6-plot trend suite for every
+    Annual/Seasonal/Monthly/10-Daily series (always) and every Daily series
+    (only when ``include_daily_period_suites`` -- 366 extra series, matching
+    the source's full parity but gated behind an opt-out for the very large
+    extra cost that entails), plus the 5 summary overview plots and the
+    aggregated Mean_Shifts_Summary workbook. Needs a volume-paired column
+    (see :class:`~hydrotrends.api.ReportColumn`); a no-op without one, since
+    every whole-series suite here is Volume-based except the Daily one.
+    """
+    if rc.volume_column is None:
+        return
+    vol_unit = rc.volume_unit_label or ""
+    root = output_dir / f"Plots_Volume_{vol_unit}"
+    scale_dirs = {
+        "annual": root / "Annual_Plots",
+        "seasonal": root / "Seasonal_Plots",
+        "monthly": root / "Monthly_Plots",
+        "dekadal": root / "Dekadal_Plots",
+        "daily": root / "Daily_Plots",
+        "summary": root / "Summary_Heatmaps",
+    }
+    for path in scale_dirs.values():
+        path.mkdir(parents=True, exist_ok=True)
+
+    dec_rows: list[dict[str, object]] = []
+    win_rows: list[dict[str, object]] = []
+
+    d, w = _write_annual_trend_suite(
+        pre, rc.volume_column, vol_unit, scale_dirs["annual"]
+    )
+    dec_rows += d
+    win_rows += w
+    d, w = _write_seasonal_trend_suites(
+        pre, rc.volume_column, vol_unit, scale_dirs["seasonal"]
+    )
+    dec_rows += d
+    win_rows += w
+    d, w = _write_monthly_trend_suites(
+        pre, rc.volume_column, vol_unit, scale_dirs["monthly"]
+    )
+    dec_rows += d
+    win_rows += w
+
+    dekad_frame = dekads_from_daily(pre.hydro) if is_daily else pre.hydro
+    d, w = _write_dekadal_trend_suites(
+        dekad_frame, rc.volume_column, vol_unit, scale_dirs["dekadal"]
+    )
+    dec_rows += d
+    win_rows += w
+
+    if is_daily and include_daily_period_suites:
+        d, w = _write_daily_trend_suites(
+            pre, rc.column, rc.unit_label, scale_dirs["daily"]
+        )
+        dec_rows += d
+        win_rows += w
+
+    _write_mean_shifts_summary(root, vol_unit, dec_rows, win_rows)
+    _write_summary_heatmaps(pre, rc, scale_dirs["summary"], is_daily=is_daily)
+
+
 def generate_plots(
     pre: PreprocessedData,
     output_dir: str | Path,
     *,
     columns: list[ReportColumn],
+    include_daily_period_suites: bool = True,
 ) -> Path:
     """Write the Section-12 distribution/duration/flood-exceedance plot suite,
-    plus (Daily input only) Section 13's per-calendar-month day-grids.
+    Section 13's Daily-only per-calendar-month day-grids, and Section 11's
+    whole-series trend suites + summary heatmaps.
 
     For each :class:`~hydrotrends.api.ReportColumn`: a distribution histogram
     grid + box-whisker grid per scale (Daily split into one grid per
@@ -806,11 +1219,22 @@ def generate_plots(
     skipped for a native-10-daily input, same as Section 12's Daily scale,
     since there's no day-level data to derive it from.
 
+    When the column is volume-paired, also writes Section 11's whole-series
+    6-plot trend suite (Parametric/Robust Bounds, Anomalies, ITA Scatter,
+    Decadal Blocks, Sliding Windows) for every Annual/Seasonal/Monthly/
+    10-Daily series, the aggregated ``Mean_Shifts_Summary_{unit}.xlsx``, and
+    the 5 summary overview plots. A daily input also gets one trend suite per
+    calendar day (366 series) unless ``include_daily_period_suites=False`` --
+    full source parity by default, with an opt-out for the very large extra
+    cost (up to ~2,200 additional PNGs) that full parity entails.
+
     Files are written under
-    ``<output_dir>/Distribution_and_Flood_Plots/<flow_unit>[_<vol_unit>]/{Daily,10Daily,Monthly,Seasonal,Annual}/``
-    and, for a daily input,
-    ``<output_dir>/Daily_Detailed_Plots_v24/<flow_unit>/<PlotType>/``.
-    Returns ``output_dir``.
+    ``<output_dir>/Distribution_and_Flood_Plots/<flow_unit>[_<vol_unit>]/{Daily,10Daily,Monthly,Seasonal,Annual}/``,
+    ``<output_dir>/Daily_Detailed_Plots_v24/<flow_unit>/<PlotType>/`` (daily
+    input only), and
+    ``<output_dir>/Plots_Volume_<vol_unit>/{Annual,Seasonal,Monthly,Dekadal,Daily}_Plots/``
+    plus ``.../Summary_Heatmaps/`` and ``.../Mean_Shifts_Summary_<vol_unit>.xlsx``
+    (volume-paired columns only). Returns ``output_dir``.
     """
     if not columns:
         raise ValueError("generate_plots needs at least one ReportColumn")
@@ -824,5 +1248,12 @@ def generate_plots(
             _write_daily_detailed_plots(
                 out, pre, rc.column, rc.unit_label, max_hydro_year
             )
+        _write_all_trend_plots(
+            pre,
+            rc,
+            out,
+            is_daily=is_daily,
+            include_daily_period_suites=include_daily_period_suites,
+        )
 
     return out

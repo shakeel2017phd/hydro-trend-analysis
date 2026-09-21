@@ -72,31 +72,37 @@ hydro-trend analyze inflow.csv --value-column inflow_cusec -o ./outputs
   `from hydrotrends.plots import generate_plots` — it isn't pulled in by
   `import hydrotrends`, same as `hydrotrends.viz.plotting`, so the base
   package stays free of the Matplotlib/Plotly/Seaborn dependency): the
-  reference script's Section 12 "all 5 scales" distribution/duration/
-  flood-exceedance suite is fully ported — a histogram+KDE grid and a
-  box-whisker grid per scale, duration curves, and Daily/10-Daily
-  flood-exceedance overlays/heatmaps. Section 13 (Daily scale only) is also
-  fully ported — for every calendar month, a 3x10/3x11 day grid of
-  box-whisker, histogram+KDE, violin, parametric-bounds, robust-bounds,
-  anomaly, ITA-scatter, decadal-blocks, and recent-vs-long-term cells, plus a
-  daily duration curve and Daily-scale flood heatmap/overlay.
-- **Not yet ported**: the reference script's Section 11 (a 6-plot trend
-  suite — Parametric/Robust Bounds, Anomalies, ITA Scatter, Decadal Blocks,
-  Sliding Windows — for every individual series across all five scales, plus
-  5 summary trend heatmaps).
-  `hydrotrends.viz.plotting` currently covers time-series plots, ITA scatter,
-  flow-duration curves, a generic trend-scatter overlay, the parametric/robust
-  LOWESS bounds plots (mean ± 3 Std Dev / median ± 1.5 IQR, with Sen's-slope
-  and change-point overlays — parity-tested in `tests/test_plotting.py`), a
-  histogram+KDE distribution grid, a box-whisker grid, a single-scale
-  histogram, flood-exceedance heatmaps, flood-exceedance overlay charts, and
-  the full Section-13 per-calendar-month day-grid engine (9 cell-drawing
-  functions plus Daily-scale duration curve/flood heatmap/flood overlay) —
-  a meaningful subset, not full parity.
+  reference script's full visualization suite (Sections 11-13) is ported.
+  Section 12's "all 5 scales" distribution/duration/flood-exceedance suite —
+  a histogram+KDE grid and a box-whisker grid per scale, duration curves, and
+  Daily/10-Daily flood-exceedance overlays/heatmaps. Section 13 (Daily scale
+  only) — for every calendar month, a 3x10/3x11 day grid of box-whisker,
+  histogram+KDE, violin, parametric-bounds, robust-bounds, anomaly,
+  ITA-scatter, decadal-blocks, and recent-vs-long-term cells, plus a daily
+  duration curve and Daily-scale flood heatmap/overlay. Section 11 — a
+  whole-series 6-plot trend suite (Parametric/Robust Bounds, Anomalies, ITA
+  Scatter, Decadal Blocks, Sliding Windows) for every Annual/Seasonal/
+  Monthly/10-Daily series (always, when the column is volume-paired) and
+  every calendar day (366 extra series, on by default for full parity —
+  pass `include_daily_period_suites=False` to skip the very large extra
+  cost that entails), an aggregated `Mean_Shifts_Summary_<unit>.xlsx`, and 5
+  summary overview plots (a multi-decadal seasonal-divergence LOWESS chart
+  plus Seasonal/Monthly/Dekadal/Daily "Monotonic Trends" heatmaps).
+  `hydrotrends.viz.plotting` covers all of the above: time-series plots, ITA
+  scatter, flow-duration curves, a generic trend-scatter overlay, the
+  parametric/robust LOWESS bounds plots (mean ± 3 Std Dev / median ± 1.5 IQR,
+  with Sen's-slope and change-point overlays), a histogram+KDE distribution
+  grid, a box-whisker grid, a single-scale histogram, flood-exceedance
+  heatmaps and overlay charts, the full Section-13 per-calendar-month
+  day-grid engine (9 cell-drawing functions plus Daily-scale duration
+  curve/flood heatmap/flood overlay), the whole-series anomaly/decadal-
+  blocks/sliding-windows bar charts, and the 5 summary heatmap/LOWESS
+  functions — all parity-tested in `tests/test_plotting.py`.
 
 If you're comparing output against the reference script and the numbers
-don't match, check whether the mismatch is in a feature listed above as "not
-yet ported" before assuming a bug in the ported statistics.
+don't match, check `tests/test_v26_parity.py` and `tests/test_plotting.py`
+for the exact formulas covered before assuming a bug in the ported
+statistics.
 
 ## Features
 

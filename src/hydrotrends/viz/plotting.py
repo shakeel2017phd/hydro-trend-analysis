@@ -30,7 +30,15 @@ from matplotlib.patches import Patch
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from scipy import stats as scipy_stats
 
-from ..core.constants import COL_DATE, FLOOD_CLASSES, FLOOD_COLORS, LOWESS_FRAC
+from ..core.constants import (
+    COL_DATE,
+    FLOOD_CLASSES,
+    FLOOD_COLORS,
+    HYDRO_DEKADS,
+    HYDRO_MONTHS,
+    HYDRO_PERIODS,
+    LOWESS_FRAC,
+)
 from ..core.utils import significance_stars
 from ..core.validation import ArrayLike
 from ..stats.frequency import (
@@ -51,6 +59,11 @@ __all__ = [
     "compute_lowess",
     "parametric_bounds_plot",
     "robust_bounds_plot",
+    "anomaly_bar_chart",
+    "compute_decadal_summary",
+    "decadal_blocks_bar_chart",
+    "compute_sliding_window_summary",
+    "sliding_windows_bar_chart",
     "distribution_grid",
     "boxwhisker_grid",
     "single_histogram",
@@ -75,6 +88,11 @@ __all__ = [
     "daily_flood_heatmap",
     "daily_flood_heatmap_interactive",
     "daily_flood_overlay",
+    "seasonal_divergence_lowess_chart",
+    "seasonal_trend_heatmap",
+    "monthly_trend_heatmap",
+    "dekadal_trend_heatmap",
+    "daily_trend_heatmap",
 ]
 
 _LINE_COLOR = "#1f4e79"
@@ -648,6 +666,223 @@ def robust_bounds_plot(
         lowess_frac=lowess_frac,
         figsize=figsize,
     )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Whole-series trend suite (Section 11): anomalies, decadal blocks, sliding
+# windows -- the source's ``_plot_timeseries_suite`` plots 3, 5, 6 (plots 1/2/4
+# are parametric_bounds_plot/robust_bounds_plot/ita_scatter above). Distinct
+# from Section 13's per-calendar-day grid-cell versions (draw_anomaly_cell/
+# draw_decadal_blocks_cell/draw_recent_vs_longterm_cell): the per-day cells add
+# +/-1-Std-Dev shading (anomalies) and use different window labels/palettes
+# than these whole-series bar charts, so the source genuinely has two distinct
+# implementations rather than one shared function.
+# ─────────────────────────────────────────────────────────────────────────────
+def anomaly_bar_chart(
+    years: ArrayLike,
+    values: ArrayLike,
+    *,
+    title: str | None = None,
+    unit_label: str = "",
+    figsize: tuple[float, float] = (10.0, 4.0),
+) -> Figure:
+    """Bar chart of each year's deviation from the series mean.
+
+    Green bars above the mean, red below -- the source's whole-series
+    "Anomalies" plot.
+    """
+    values_arr = np.asarray(values, dtype="float64")
+    mean_val = float(values_arr.mean())
+    anomalies = values_arr - mean_val
+    colors = ["#2ca02c" if v >= 0 else "#d62728" for v in anomalies]
+
+    fig = Figure(figsize=figsize)
+    ax = fig.subplots()
+    ax.bar(np.asarray(years, dtype="float64"), anomalies, color=colors, alpha=0.7)
+    ax.axhline(0, color="black", linewidth=1)
+    unit = f" ({unit_label})" if unit_label else ""
+    ax.set_title(title or f"Anomalies{unit}", fontweight="bold")
+    ax.set_ylabel(f"Deviation from Mean{unit}")
+    fig.tight_layout()
+    return fig
+
+
+def compute_decadal_summary(years: ArrayLike, values: ArrayLike) -> pd.DataFrame:
+    """Chronological decade-block means: one row per decade with data.
+
+    Uses the same boundaries as the per-day :func:`_decade_label`
+    (1980/1990/2000/2010/2020), ordered chronologically. Columns: ``Decade``,
+    ``Years`` (count), ``Mean``.
+    """
+    years_arr = np.asarray(years, dtype="int64")
+    values_arr = np.asarray(values, dtype="float64")
+    min_year, max_year = int(years_arr.min()), int(years_arr.max())
+    df = pd.DataFrame({"Year": years_arr, "Val": values_arr})
+    df["Decade"] = df["Year"].apply(lambda y: _decade_label(y, min_year, max_year))
+    decade_order = []
+    for probe in (1975, 1985, 1995, 2005, 2015, 2025):
+        label = _decade_label(probe, min_year, max_year)
+        if label not in decade_order and (df["Decade"] == label).any():
+            decade_order.append(label)
+    df["Decade"] = pd.Categorical(df["Decade"], categories=decade_order, ordered=True)
+    summary: pd.DataFrame = (
+        df.groupby("Decade", observed=True)
+        .agg(Years=("Year", "count"), Mean=("Val", "mean"))
+        .dropna()
+        .reset_index()
+    )
+    return summary
+
+
+def decadal_blocks_bar_chart(
+    summary: pd.DataFrame,
+    *,
+    overall_mean: float,
+    title: str | None = None,
+    unit_label: str = "",
+    figsize: tuple[float, float] = (10.0, 5.0),
+) -> Figure:
+    """Bar chart of :func:`compute_decadal_summary`'s per-decade means.
+
+    Value-labelled bars plus a dashed overall-mean reference line -- the
+    source's whole-series "Decadal Blocks" plot. ``overall_mean`` is the
+    caller-supplied full-series mean (the source derives it from the "Overall
+    Climatological" sliding-window mean, which is the same quantity).
+    """
+    fmt = _value_format(unit_label)
+    fig = Figure(figsize=figsize)
+    ax = fig.subplots()
+    bars = ax.bar(
+        summary["Decade"].astype(str),
+        summary["Mean"].to_numpy(),
+        color=sns.color_palette("viridis", len(summary)),
+        alpha=0.9,
+    )
+    ax.axhline(
+        overall_mean,
+        color="red",
+        linestyle="--",
+        linewidth=2,
+        label=f"Overall Mean ({overall_mean:{fmt}})",
+    )
+    for rect in bars:
+        height = rect.get_height()
+        ax.annotate(
+            format(height, fmt),
+            (rect.get_x() + rect.get_width() / 2, height),
+            ha="center",
+            va="center",
+            xytext=(0, 9),
+            textcoords="offset points",
+            fontweight="bold",
+            fontsize=9,
+        )
+    unit = f" ({unit_label})" if unit_label else ""
+    ax.set_title(title or f"Average Mean Value by Decade{unit}", fontweight="bold")
+    ax.set_xlabel("Chronological Decade Block")
+    ax.set_ylabel(f"Mean Value{unit}")
+    ax.set_ylim(0, float(summary["Mean"].max()) * 1.15)
+    ax.legend(loc="upper right", fontsize="small")
+    fig.tight_layout()
+    return fig
+
+
+_SLIDING_WINDOWS: tuple[tuple[str, int | None], ...] = (
+    ("Overall Climatological", None),
+    ("Last 40 Years", 40),
+    ("Last 20 Years", 20),
+    ("Last 10 Years", 10),
+    ("Last 5 Years", 5),
+)
+
+
+def compute_sliding_window_summary(years: ArrayLike, values: ArrayLike) -> pd.DataFrame:
+    """Mean over sliding recent windows vs the full-record ("Overall
+    Climatological") mean. Columns: ``Period``, ``Span``, ``Mean``,
+    ``Years_Included``.
+
+    Years are sorted chronologically before taking each window's tail slice
+    (the source instead trusts its caller's array to already be
+    chronologically ordered, which every one of its call sites is; sorting
+    here is a harmless robustness addition, not a formula difference).
+    """
+    years_arr = np.asarray(years, dtype="int64")
+    values_arr = np.asarray(values, dtype="float64")
+    order = np.argsort(years_arr)
+    years_sorted = years_arr[order]
+    values_sorted = values_arr[order]
+    n = len(years_sorted)
+    rows = []
+    for label, size in _SLIDING_WINDOWS:
+        window = n if size is None else min(size, n)
+        y_win = years_sorted[-window:]
+        v_win = values_sorted[-window:]
+        rows.append(
+            {
+                "Period": label,
+                "Span": f"{int(y_win.min())}–{int(y_win.max())}",
+                "Mean": float(v_win.mean()),
+                "Years_Included": int(window),
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def sliding_windows_bar_chart(
+    summary: pd.DataFrame,
+    *,
+    title: str | None = None,
+    unit_label: str = "",
+    figsize: tuple[float, float] = (11.0, 5.0),
+) -> Figure:
+    """Bar chart of :func:`compute_sliding_window_summary`'s recent-vs-long-term
+    means, each bar annotated with its value and year span -- the source's
+    whole-series "Sliding Windows" plot.
+    """
+    fmt = _value_format(unit_label)
+    fig = Figure(figsize=figsize)
+    ax = fig.subplots()
+    palette = [
+        "#e74c3c" if period == "Overall Climatological" else "#3498db"
+        for period in summary["Period"]
+    ]
+    bars = ax.bar(
+        summary["Period"], summary["Mean"].to_numpy(), color=palette, alpha=0.9
+    )
+    overall_mean = float(
+        summary.loc[summary["Period"] == "Overall Climatological", "Mean"].iloc[0]
+    )
+    for rect, (_, row) in zip(bars, summary.iterrows(), strict=True):
+        height = rect.get_height()
+        ax.annotate(
+            f"{height:{fmt}}\n({row['Span']})",
+            (rect.get_x() + rect.get_width() / 2, height),
+            ha="center",
+            va="center",
+            xytext=(0, 15),
+            textcoords="offset points",
+            fontweight="bold",
+            fontsize=9,
+        )
+    ax.axhline(overall_mean, color="black", linestyle=":", linewidth=1.5, zorder=0)
+    unit = f" ({unit_label})" if unit_label else ""
+    ax.set_title(
+        title or f"Average Mean Value by Recent Mean and Long-term Mean{unit}",
+        fontweight="bold",
+    )
+    ax.set_xlabel("Aggregation Window")
+    ax.set_ylabel(f"Mean Value{unit}")
+    ax.set_ylim(0, float(summary["Mean"].max()) * 1.25)
+    ax.legend(
+        handles=[
+            Patch(facecolor="#e74c3c", label="Long-term Historical Mean"),
+            Patch(facecolor="#3498db", label="Recent Sliding Means"),
+        ],
+        loc="lower right",
+        fontsize="small",
+    )
+    fig.tight_layout()
+    return fig
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -2060,3 +2295,272 @@ def daily_flood_overlay(
     ax.grid(True, alpha=0.3)
     fig.tight_layout()
     return fig
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Section 11's 5 summary overview plots: one multi-decadal LOWESS chart (7A)
+# plus 4 "Monotonic Trends" heatmaps (7B Seasonal/7C Monthly/7D Dekadal/7E
+# Daily) condensing every period's trend direction + significance into one
+# calendar-style panel. Callers (:mod:`hydrotrends.plots`) supply already
+# analysed trend results; these functions only lay them out.
+# ─────────────────────────────────────────────────────────────────────────────
+_SEASON_DIVERGENCE_STYLE: tuple[tuple[str, str, str], ...] = (
+    ("Early_Kharif", "#ff7f0e", "Early Kharif"),
+    ("Late_Kharif", "#2ca02c", "Late Kharif"),
+    ("Rabi", "#1f77b4", "Rabi"),
+)
+
+
+def seasonal_divergence_lowess_chart(
+    years: ArrayLike,
+    series_by_season: Mapping[str, pd.Series],
+    *,
+    unit_label: str = "",
+    lowess_frac: float = LOWESS_FRAC,
+    figsize: tuple[float, float] = (10.0, 5.0),
+) -> Figure:
+    """7A: multi-decadal LOWESS smoothing of Early Kharif / Late Kharif / Rabi
+    seasonal volume, one line per season.
+
+    Each season's series is reindexed to ``years`` (the Annual series' own
+    year index) before smoothing, so a year missing from a season's series
+    drops out rather than misaligning the plotted points -- matching the
+    source's ``seas_series[key].reindex(ann.index)`` exactly. A season needs
+    more than 3 valid years to draw a line at all.
+    """
+    year_index = pd.Index(np.asarray(years))
+    years_plot = np.asarray(years, dtype="float64")
+
+    fig = Figure(figsize=figsize)
+    ax = fig.subplots()
+    for key, color, label in _SEASON_DIVERGENCE_STYLE:
+        aligned = series_by_season[key].reindex(year_index)
+        valid = aligned.notna().to_numpy()
+        valid_years = years_plot[valid]
+        valid_values = aligned.to_numpy(dtype="float64")[valid]
+        if len(valid_years) > 3:
+            ax.plot(
+                valid_years,
+                compute_lowess(valid_years, valid_values, frac=lowess_frac),
+                color=color,
+                linewidth=2,
+                label=f"{label} (LOWESS)",
+            )
+    unit = f" ({unit_label})" if unit_label else ""
+    ax.set_title(
+        f"Seasonal Inflow Shifts{unit} — Multi-Decadal Smoothing", fontweight="bold"
+    )
+    ax.set_ylabel(f"Volume{unit}")
+    if ax.get_legend_handles_labels()[0]:  # avoid a "no artists" warning on a
+        ax.legend(loc="best")  # too-short record where no season qualifies
+    fig.tight_layout()
+    return fig
+
+
+_TREND_SCORE: dict[str, float] = {
+    "increasing": 1.0,
+    "no trend": 0.0,
+    "decreasing": -1.0,
+}
+_TREND_CMAP = sns.color_palette(["#d62728", "#f2f2f2", "#2ca02c"])
+_TREND_LEGEND_NOTE = (
+    "Trend Colors: Green (Increasing) | White/Gray (No Trend) | Red (Decreasing)\n"
+    "Significance: *** (p<0.001) | ** (p<0.01) | * (p<0.05) | . (p<0.10) | ns (Not Sig)"
+)
+
+
+def _trend_score_and_annotation(trend: str, significance: str) -> tuple[float, str]:
+    """Trend direction as -1/0/+1 plus its significance-stars annotation,
+    blanked when not significant (``"ns"`` -> ``""``)."""
+    sig = significance.strip()
+    return _TREND_SCORE.get(trend, 0.0), ("" if sig == "ns" else sig)
+
+
+def _monotonic_trend_heatmap(
+    matrix: pd.DataFrame,
+    annot: pd.DataFrame,
+    *,
+    title: str,
+    figsize: tuple[float, float],
+    bottom: float,
+    note_y: float,
+    note_fontsize: float = 9.0,
+    hide_yticklabels: bool = False,
+    xlabel: str | None = None,
+) -> Figure:
+    """Shared core for the 4 "Monotonic Trends" heatmaps (7B/7C/7D/7E): a
+    red/gray/green heatmap of trend direction with significance-stars
+    annotations and the fixed legend note below the panel.
+    """
+    fig = Figure(figsize=figsize)
+    ax = fig.subplots()
+    sns.heatmap(
+        matrix,
+        cmap=_TREND_CMAP,
+        vmin=-1,
+        vmax=1,
+        center=0,
+        cbar=False,
+        annot=annot,
+        fmt="",
+        ax=ax,
+        linewidths=0.5,
+        linecolor="gray",
+    )
+    ax.set_title(title, fontweight="bold")
+    if hide_yticklabels:
+        ax.set_yticklabels([])
+    if xlabel:
+        ax.set_xlabel(xlabel)
+    fig.tight_layout()
+    fig.subplots_adjust(bottom=bottom)
+    fig.text(
+        0.5,
+        note_y,
+        _TREND_LEGEND_NOTE,
+        ha="center",
+        fontsize=note_fontsize,
+        color="dimgray",
+        style="italic",
+    )
+    return fig
+
+
+_SEASON_HEATMAP_ORDER: tuple[str, ...] = (
+    "Early_Kharif",
+    "Late_Kharif",
+    "Kharif",
+    "Rabi",
+    "Annual",
+)
+
+
+def seasonal_trend_heatmap(
+    trend_by_season: Mapping[str, tuple[str, str]], *, unit_label: str = ""
+) -> Figure:
+    """7B: one-row heatmap of Early/Late Kharif, Kharif, Rabi, and Annual
+    trend direction + significance.
+
+    ``trend_by_season`` maps a season key (:data:`_SEASON_HEATMAP_ORDER`) to
+    its ``(trend, significance)`` pair; a missing key leaves that column
+    blank, matching the source's ``if s_name in seasonal_results`` guard.
+    """
+    columns = [key.replace("_", " ") for key in _SEASON_HEATMAP_ORDER]
+    matrix = pd.DataFrame(index=["Trend"], columns=columns, dtype=float)
+    annot = pd.DataFrame(index=["Trend"], columns=columns, dtype=str)
+    for key, column in zip(_SEASON_HEATMAP_ORDER, columns, strict=True):
+        if key in trend_by_season:
+            trend, significance = trend_by_season[key]
+            score, sig_text = _trend_score_and_annotation(trend, significance)
+            matrix.loc["Trend", column] = score
+            annot.loc["Trend", column] = sig_text
+    unit = f" ({unit_label})" if unit_label else ""
+    return _monotonic_trend_heatmap(
+        matrix,
+        annot,
+        title=f"Seasonal & Annual Monotonic Trends{unit}",
+        figsize=(8.0, 2.5),
+        bottom=0.35,
+        note_y=0.05,
+        hide_yticklabels=True,
+    )
+
+
+def monthly_trend_heatmap(
+    monthly_results: pd.DataFrame, *, unit_label: str = ""
+) -> Figure:
+    """7C: one-row heatmap of each hydrological month's trend direction +
+    significance, built from an ``analyze_monthly_volumes``-shaped results
+    frame (indexed by month, with ``trend``/``significance`` columns).
+
+    Unlike :func:`seasonal_trend_heatmap`/:func:`dekadal_trend_heatmap`/
+    :func:`daily_trend_heatmap`, this one does **not** blank a "ns"
+    (not-significant) annotation to an empty string -- it shows the literal
+    "ns" text. That's a genuine inconsistency in the source script (its
+    Monthly heatmap uses the raw ``significance`` column directly, while its
+    Seasonal/Dekadal/Daily counterparts all strip "ns"), reproduced here for
+    parity rather than "fixed". A month with no trend at all (too few years)
+    is left blank, whether that means a missing ``trend`` column entirely or
+    a ``NaN`` value for that row.
+    """
+    if "trend" in monthly_results.columns:
+        scores = monthly_results["trend"].map(_TREND_SCORE).astype(float)
+        annot = monthly_results[["significance"]].fillna("").T
+    else:
+        scores = pd.Series(float("nan"), index=monthly_results.index)
+        annot = pd.DataFrame("", index=["significance"], columns=monthly_results.index)
+    matrix = scores.to_frame("trend_score").T
+    unit = f" ({unit_label})" if unit_label else ""
+    return _monotonic_trend_heatmap(
+        matrix,
+        annot,
+        title=f"Monthly Monotonic Trends{unit}",
+        figsize=(10.0, 2.5),
+        bottom=0.35,
+        note_y=0.05,
+        hide_yticklabels=True,
+    )
+
+
+def dekadal_trend_heatmap(
+    dekadal_results: pd.DataFrame, *, unit_label: str = ""
+) -> Figure:
+    """7D: 12 (hydrological month) x 3 (dekad) heatmap of trend direction +
+    significance, built from a 10-daily results frame indexed by dekad period
+    labels (``"Apr1"``..``"Mar3"``, e.g.
+    :data:`~hydrotrends.core.constants.HYDRO_DEKADS`).
+    """
+    matrix = pd.DataFrame(index=list(HYDRO_MONTHS), columns=[1, 2, 3], dtype=float)
+    annot = pd.DataFrame(index=list(HYDRO_MONTHS), columns=[1, 2, 3], dtype=str)
+    has_trend = "trend" in dekadal_results.columns
+    for period in HYDRO_DEKADS:
+        month, dekad = period[:-1], int(period[-1])
+        if has_trend and period in dekadal_results.index:
+            trend = dekadal_results.loc[period, "trend"]
+            if pd.notna(trend):
+                significance = dekadal_results.loc[period, "significance"]
+                score, sig_text = _trend_score_and_annotation(trend, significance)
+                matrix.loc[month, dekad] = score
+                annot.loc[month, dekad] = sig_text
+    unit = f" ({unit_label})" if unit_label else ""
+    return _monotonic_trend_heatmap(
+        matrix,
+        annot,
+        title=f"10-Daily Monotonic Trends{unit}",
+        figsize=(6.0, 6.0),
+        bottom=0.15,
+        note_y=0.03,
+        xlabel="Dekad (1, 2, 3)",
+    )
+
+
+def daily_trend_heatmap(daily_results: pd.DataFrame, *, unit_label: str = "") -> Figure:
+    """7E: 12 (hydrological month) x 31 (day) heatmap of trend direction +
+    significance, built from a daily results frame indexed by day-of-year
+    period labels (``"Apr-01"``..``"Mar-31"``, e.g.
+    :data:`~hydrotrends.core.constants.HYDRO_PERIODS`).
+    """
+    matrix = pd.DataFrame(index=list(HYDRO_MONTHS), columns=range(1, 32), dtype=float)
+    annot = pd.DataFrame(index=list(HYDRO_MONTHS), columns=range(1, 32), dtype=str)
+    has_trend = "trend" in daily_results.columns
+    for period in HYDRO_PERIODS:
+        month, day_str = period.split("-")
+        day = int(day_str)
+        if has_trend and period in daily_results.index:
+            trend = daily_results.loc[period, "trend"]
+            if pd.notna(trend):
+                significance = daily_results.loc[period, "significance"]
+                score, sig_text = _trend_score_and_annotation(trend, significance)
+                matrix.loc[month, day] = score
+                annot.loc[month, day] = sig_text
+    unit = f" ({unit_label})" if unit_label else ""
+    return _monotonic_trend_heatmap(
+        matrix,
+        annot,
+        title=f"Daily Monotonic Trends{unit}",
+        figsize=(14.0, 5.0),
+        bottom=0.20,
+        note_y=0.03,
+        note_fontsize=10.0,
+        xlabel="Day of Month",
+    )
